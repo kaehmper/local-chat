@@ -29,6 +29,16 @@ unsigned long lastTick = 0;
 void handleServeIndex(AsyncWebServerRequest *request) {
     chatManager.registerActivity();
 
+    // Falls der Host nicht unsere lokale IP-Adresse ist (z.B. bei Eingabe von neverssl.com),
+    // leiten wir den Client sofort per 302-Redirect auf unsere kanonische IP http://10.10.10.1/ um.
+    // Dies ändert die Browser-Adresszeile und sichert die fehlerfreie Verbindung des WebSockets!
+    String hostHeader = request->host();
+    if (hostHeader != "10.10.10.1" && hostHeader != "10.10.10.1:80") {
+        Serial.println("[CaptivePortal] Umleitung von '/' auf http://10.10.10.1/");
+        request->redirect("http://10.10.10.1/");
+        return;
+    }
+
     // Hocheffizientes Senden des vor-komprimierten SPA-Frontends aus dem PROGMEM
     AsyncWebServerResponse *response = request->beginResponse_P(
         200,
