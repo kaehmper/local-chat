@@ -402,7 +402,7 @@ void ChatManager::handleIncomingPacket(const MeshPacket& packet) {
         bool exists = false;
         size_t count = targetRoom.size();
         for (size_t i = 0; i < count; ++i) {
-            if (targetRoom.get(i) == msgPayload) {
+            if (msgPayload.equals(targetRoom.get(i))) {
                 exists = true;
                 break;
             }
@@ -410,7 +410,7 @@ void ChatManager::handleIncomingPacket(const MeshPacket& packet) {
 
         if (!exists && msgPayload.length() > 0) {
             targetRoom.add(msgPayload);
-            // Lokal an alle hier verbundenen WebSocket-Clients senden
+            // Lokal an alle WebSocket-Clients senden
             broadcastMessage(room, msgPayload);
         }
     }
@@ -479,7 +479,7 @@ void ChatManager::handleSyncResponse(const MeshPacket& packet) {
     bool exists = false;
     size_t count = targetRoom.size();
     for (size_t i = 0; i < count; ++i) {
-        if (targetRoom.get(i) == msgPayload) {
+        if (msgPayload.equals(targetRoom.get(i))) {
             exists = true;
             break;
         }
