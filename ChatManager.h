@@ -8,7 +8,7 @@
 /**
  * @class MessageRingBuffer
  * @brief Eine hocheffiziente Ringpuffer-Implementierung für Chat-Nachrichten.
- * 
+ *
  * Vermeidet teure dynamische Speicherverschiebungen durch rotierende Indizes.
  */
 class MessageRingBuffer {
@@ -29,7 +29,7 @@ public:
     /**
      * @brief Ruft eine Nachricht an einer bestimmten relativen Position ab (0 = älteste).
      */
-    String get(size_t index) const;
+    const char* get(size_t index) const;
 
 private:
     char _buffer[Config::MAX_MESSAGES][Config::MAX_MSG_LENGTH + 1];
@@ -95,8 +95,8 @@ private:
     String makeAuthToken();
 
     // Verarbeitet WebSocket-Ereignisse
-    void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client, 
-                   AwsTemplateType type, void* arg, uint8_t* data, size_t len);
+    void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
+                   AwsEventType type, void* arg, uint8_t* data, size_t len);
 
     // Behandelt eingehende Text-Nachrichten des WebSockets
     void handleWsTextMessage(AsyncWebSocketClient* client, const String& message);

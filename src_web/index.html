@@ -392,7 +392,7 @@
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws`;
-      
+
       ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
@@ -408,11 +408,11 @@
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
+
           if (data.type === 'init') {
             myUid = data.uid || '';
             isAuthenticated = data.authenticated || false;
-            
+
             if (data.room === currentRoom) {
               if (currentRoom === 'locked' && !isAuthenticated) {
                 showLoginOverlay(true);
@@ -421,7 +421,7 @@
                 renderMessages(data.messages || []);
               }
             }
-          } 
+          }
           else if (data.type === 'msg') {
             if (data.room === currentRoom) {
               appendMessage(data.msg);
@@ -499,7 +499,7 @@
     function submitPassword() {
       const pwd = passwordInput.value;
       if (!pwd) return;
-      
+
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: 'auth',
@@ -534,7 +534,7 @@
     function appendMessage(msgStr, scroll = true) {
       let uid = '';
       let text = msgStr;
-      
+
       const match = msgStr.match(/^\[([A-Fa-f0-9]{4})\]\s(.*)/);
       if (match) {
         uid = match[1];
@@ -550,8 +550,9 @@
       metaSpan.innerText = isSelf ? `Du (${uid})` : (uid ? `Nutzer ${uid}` : 'System');
       msgDiv.appendChild(metaSpan);
 
-      const textNode = document.createTextNode(text);
-      msgDiv.appendChild(textNode);
+      const textSpan = document.createElement('span');
+      textSpan.innerHTML = text;
+      msgDiv.appendChild(textSpan);
 
       chatContainer.appendChild(msgDiv);
 

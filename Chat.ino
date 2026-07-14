@@ -1,7 +1,7 @@
 /**
  * @file PopupChat.ino
  * @brief Hauptdatei für den PopupChat - Lokaler Echtzeit-Chat mit Captive Portal.
- * 
+ *
  * Diese Implementierung nutzt modernste Web-Technologien (Single Page Application via WebSockets)
  * und hochperformante Speicherverfahren (Gzip-komprimierte Web-Assets im PROGMEM),
  * um ein erstklassiges Benutzererlebnis auf dem ESP8266 zu bieten.
@@ -31,9 +31,9 @@ void handleServeIndex(AsyncWebServerRequest *request) {
 
     // Hocheffizientes Senden des vor-komprimierten SPA-Frontends aus dem PROGMEM
     AsyncWebServerResponse *response = request->beginResponse_P(
-        200, 
-        "text/html", 
-        WebAssets::INDEX_GZ, 
+        200,
+        "text/html",
+        WebAssets::INDEX_GZ,
         WebAssets::INDEX_GZ_LEN
     );
     response->addHeader("Content-Encoding", "gzip");
@@ -59,7 +59,7 @@ void setup() {
     // WLAN-Access Point (AP) konfigurieren
     Serial.print("Konfiguriere Access Point: ");
     Serial.println(Config::CHATNAME);
-    
+
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig(apIP, apIP, subnet);
     WiFi.softAP(Config::CHATNAME);
