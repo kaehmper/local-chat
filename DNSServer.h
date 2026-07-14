@@ -6,7 +6,7 @@
 /**
  * @class CustomDNSServer
  * @brief Ein hocheffizienter, leichtgewichtiger DNS-Server für das Captive Portal.
- * 
+ *
  * Beantwortet alle DNS-Anfragen (Typ A) mit einer vordefinierten IP-Adresse (Redirect),
  * ohne externe Abhängigkeiten zu nutzen.
  */
