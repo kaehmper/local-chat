@@ -81,13 +81,19 @@ void setup() {
 
     // Fallback/Captive-Portal Handler für unbekannte Routen
     server.onNotFound([](AsyncWebServerRequest *request) {
-        // Logge Captive-Portal Versuche
-        Serial.print("Anfrage an nicht existierende URL: ");
-        Serial.println(request->url());
-
-        // Jede nicht gefundene Anfrage (insb. Captive-Portal-Prüfungen der Smartphones)
-        // beantworten wir direkt mit unserem SPA-Frontend. Das spart Ladezeit und Redirects!
-        handleServeIndex(request);
+        // Überprüfe den Host-Header. Wenn er nicht mit unserer IP übereinstimmt,
+        // leiten wir den Browser per 302-Redirect direkt auf unsere IP-Adresse um.
+        // Dies ändert die Adresszeile des Browsers auf 10.10.10.1, sodass der
+        // WebSocket-Client im Browser direkt dorthin verbinden kann!
+        String hostHeader = request->host();
+        if (hostHeader != "10.10.10.1" && hostHeader != "10.10.10.1:80") {
+            Serial.println("[CaptivePortal] Umleitung von '" + hostHeader + "' auf http://10.10.10.1/");
+            request->redirect("http://10.10.10.1/");
+        } else {
+            // Falls der Host bereits 10.10.10.1 ist, aber die Route unbekannt war,
+            // liefern wir das Frontend aus, um unschöne 404-Fehler zu vermeiden.
+            handleServeIndex(request);
+        }
     });
 
     // Webserver starten
