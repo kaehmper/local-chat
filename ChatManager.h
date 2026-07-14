@@ -11,7 +11,6 @@
 #pragma pack(push, 1)
 struct MeshPacket {
     uint8_t packetType;       // 1 = CHAT_MSG, 2 = SYNC_REQ, 3 = SYNC_MSG, 4 = SYNC_END
-    uint8_t roomType;         // 1 = open, 2 = locked
     uint32_t senderId;        // Unique node sender ID
     char message[201];        // Text message payload
 };
@@ -72,11 +71,6 @@ public:
     void cleanup();
 
     /**
-     * @brief Überprüft, ob ein Client authentifiziert ist.
-     */
-    bool isClientAuthenticated(AsyncWebSocketClient* client) const;
-
-    /**
      * @brief Gibt den Inaktivitäts-Zeitstempel zurück.
      */
     uint32_t getLastActivityTime() const { return _lastActivity; }
@@ -95,9 +89,8 @@ private:
     // WebSocket-Objekt für Echtzeitkommunikation
     AsyncWebSocket _ws;
 
-    // Chat-Räume
+    // Chat-Raum
     MessageRingBuffer _openRoom;
-    MessageRingBuffer _lockedRoom;
 
     // Zeitstempel der letzten Nutzeraktivität
     uint32_t _lastActivity;
@@ -116,10 +109,10 @@ private:
     void handleWsTextMessage(AsyncWebSocketClient* client, const String& message);
 
     // Sendet Raum-Initialisierungsdaten an einen bestimmten Client
-    void sendRoomInit(AsyncWebSocketClient* client, const String& room);
+    void sendRoomInit(AsyncWebSocketClient* client);
 
-    // Broadcastet eine Nachricht an alle Clients eines bestimmten Raumes
-    void broadcastMessage(const String& room, const String& msg);
+    // Broadcastet eine Nachricht an alle Clients des Raumes
+    void broadcastMessage(const String& msg);
 
 #if ENABLE_MESH
 public:
@@ -131,7 +124,7 @@ private:
     uint32_t _lastPingTime;
 
     void initMesh();
-    void sendMeshBroadcast(uint8_t packetType, uint8_t roomType, const String& msg);
+    void sendMeshBroadcast(uint8_t packetType, const String& msg);
     void handleIncomingPacket(const MeshPacket& packet);
     void handleSyncRequest(uint32_t targetNodeId);
     void handleSyncResponse(const MeshPacket& packet);

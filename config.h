@@ -12,10 +12,8 @@
 namespace Config {
 
 // ---------- WLAN & Netzwerk ----------
-constexpr char CHATNAME[]        = "PopupChat";             ///< Name des Access Points (SSID)
-constexpr char BLURB[]           = "Lokaler Chat in zwei Räumen"; ///< Slogan/Untertitel
-constexpr char LOCK_PASSWORD[]   = "secret";                ///< Passwort für den geschützten Raum
-constexpr char AUTH_SALT[]       = "popup2024";             ///< Salt für kryptographische Verifizierungen
+constexpr char CHATNAME[]        = "CardijnChat";           ///< Name des Access Points (SSID)
+constexpr char BLURB[]           = "Lokaler CardijnChat";   ///< Slogan/Untertitel
 constexpr uint16_t HTTP_PORT     = 80;                      ///< Port des Webservers
 constexpr uint16_t DNS_PORT      = 53;                      ///< Port des DNS-Servers
 
