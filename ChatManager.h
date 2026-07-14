@@ -5,6 +5,20 @@
 
 #include "Config.h"
 
+#if ENABLE_MESH
+#include <espnow.h>
+
+#pragma pack(push, 1)
+struct MeshPacket {
+    uint8_t packetType;       // 1 = CHAT_MSG, 2 = SYNC_REQ, 3 = SYNC_MSG, 4 = SYNC_END
+    uint8_t roomType;         // 1 = open, 2 = locked
+    uint32_t senderId;        // Unique node sender ID
+    char message[201];        // Text message payload
+};
+#pragma pack(pop)
+
+#endif
+
 /**
  * @class MessageRingBuffer
  * @brief Eine hocheffiziente Ringpuffer-Implementierung für Chat-Nachrichten.
@@ -53,7 +67,7 @@ public:
     void begin(AsyncWebServer* server);
 
     /**
-     * @brief Führt zyklische Aufräumarbeiten am WebSocket durch.
+     * @brief Führt zyklische Aufräumarbeiten am WebSocket und Mesh durch.
      */
     void cleanup();
 
@@ -106,4 +120,20 @@ private:
 
     // Broadcastet eine Nachricht an alle Clients eines bestimmten Raumes
     void broadcastMessage(const String& room, const String& msg);
+
+#if ENABLE_MESH
+public:
+    // Statischer Callback für ESP-NOW Empfang
+    static void onEspNowRecv(uint8_t* mac, uint8_t* incomingData, uint8_t len);
+
+private:
+    uint32_t _nodeId;
+    uint32_t _lastPingTime;
+
+    void initMesh();
+    void sendMeshBroadcast(uint8_t packetType, uint8_t roomType, const String& msg);
+    void handleIncomingPacket(const MeshPacket& packet);
+    void handleSyncRequest(uint32_t targetNodeId);
+    void handleSyncResponse(const MeshPacket& packet);
+#endif
 };

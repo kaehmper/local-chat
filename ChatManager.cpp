@@ -8,6 +8,9 @@ struct ClientSession {
     String wsBuffer;
 };
 
+// Globaler externer Zeiger auf ChatManager (für statische ESP-NOW Callbacks)
+extern ChatManager chatManager;
+
 // ==================== MessageRingBuffer ====================
 
 MessageRingBuffer::MessageRingBuffer() : _start(0), _count(0) {
@@ -40,7 +43,12 @@ const char* MessageRingBuffer::get(size_t index) const {
 // ==================== ChatManager ====================
 
 ChatManager::ChatManager()
-    : _ws("/ws"), _lastActivity(0) {}
+    : _ws("/ws"), _lastActivity(0) {
+#if ENABLE_MESH
+    _nodeId = 0;
+    _lastPingTime = 0;
+#endif
+}
 
 void ChatManager::begin(AsyncWebServer* server) {
     _lastActivity = millis();
@@ -52,10 +60,21 @@ void ChatManager::begin(AsyncWebServer* server) {
     });
 
     server->addHandler(&_ws);
+
+#if ENABLE_MESH
+    initMesh();
+#endif
 }
 
 void ChatManager::cleanup() {
     _ws.cleanupClients();
+#if ENABLE_MESH
+    uint32_t now = millis();
+    if (now - _lastPingTime > 60000) { // Alle 60 Sekunden periodischer Sync-Request
+        _lastPingTime = now;
+        sendMeshBroadcast(2, 1, ""); // SYNC_REQ senden
+    }
+#endif
 }
 
 bool ChatManager::isClientAuthenticated(AsyncWebSocketClient* client) const {
@@ -251,6 +270,11 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
                 _openRoom.add(formattedMsg);
             }
             broadcastMessage(room, formattedMsg);
+
+#if ENABLE_MESH
+            // Übertragungs-Eigenschaften für Echtzeit-Mesh-Nachrichten
+            sendMeshBroadcast(1, (room == "locked") ? 2 : 1, formattedMsg); // Type 1: CHAT_MSG
+#endif
         }
     }
 }
@@ -323,3 +347,147 @@ void ChatManager::broadcastMessage(const String& room, const String& msg) {
         }
     }
 }
+
+// ==================== LIGHTWEIGHT ESP-NOW MESH BACKHAUL ====================
+#if ENABLE_MESH
+
+void ChatManager::initMesh() {
+    _nodeId = ESP.getChipId();
+    _lastPingTime = millis();
+
+    // Initialisiere das ESP-NOW SDK
+    if (esp_now_init() != 0) {
+        Serial.println("[ESP-NOW] Fehler bei der Initialisierung");
+        return;
+    }
+
+    esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
+
+    // Broadcast-Peer registrieren (MAC: FF:FF:FF:FF:FF:FF)
+    uint8_t broadcastMac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    esp_now_add_peer(broadcastMac, ESP_NOW_ROLE_COMBO, Config::MESH_CHANNEL, NULL, 0);
+
+    // Empfangs-Callback registrieren
+    esp_now_register_recv_cb(ChatManager::onEspNowRecv);
+
+    Serial.println("[ESP-NOW] Erfolgreich initialisiert auf Node ID: " + String(_nodeId));
+
+    // Nach dem Start einen Sync-Request broadcasten, um Nachbarn zu finden und Historie zu holen
+    sendMeshBroadcast(2, 1, ""); // Type 2: SYNC_REQ
+}
+
+void ChatManager::onEspNowRecv(uint8_t* mac, uint8_t* incomingData, uint8_t len) {
+    if (len == sizeof(MeshPacket)) {
+        MeshPacket packet;
+        std::memcpy(&packet, incomingData, sizeof(MeshPacket));
+        chatManager.handleIncomingPacket(packet);
+    }
+}
+
+void ChatManager::handleIncomingPacket(const MeshPacket& packet) {
+    // Eigene Pakete ignorieren
+    if (packet.senderId == _nodeId) {
+        return;
+    }
+
+    _lastActivity = millis(); // System-Aktivität registrieren
+
+    String room = (packet.roomType == 2) ? "locked" : "open";
+    String msgPayload = String(packet.message);
+
+    if (packet.packetType == 1) { // 1 = CHAT_MSG (Echtzeit-Nachricht)
+        MessageRingBuffer& targetRoom = (packet.roomType == 2) ? _lockedRoom : _openRoom;
+
+        // Dubletten-Prüfung vor dem Einfügen
+        bool exists = false;
+        size_t count = targetRoom.size();
+        for (size_t i = 0; i < count; ++i) {
+            if (targetRoom.get(i) == msgPayload) {
+                exists = true;
+                break;
+            }
+        }
+
+        if (!exists && msgPayload.length() > 0) {
+            targetRoom.add(msgPayload);
+            // Lokal an alle hier verbundenen WebSocket-Clients senden
+            broadcastMessage(room, msgPayload);
+        }
+    }
+    else if (packet.packetType == 2) { // 2 = SYNC_REQ (Historie angefordert)
+        handleSyncRequest(packet.senderId);
+    }
+    else if (packet.packetType == 3) { // 3 = SYNC_MSG (Historien-Nachricht)
+        handleSyncResponse(packet);
+    }
+    else if (packet.packetType == 4) { // 4 = SYNC_END (Historie-Ende erreicht)
+        Serial.println("[ESP-NOW] Historien-Synchronisierung abgeschlossen. Aktualisiere Clients...");
+        // Re-Initialisiere alle lokalen WebSockets, damit die Historie sichtbar ist
+        for (auto&& client_item : _ws.getClients()) {
+            AsyncWebSocketClient* client = getClientPtr(client_item);
+            if (client && client->status() == WS_CONNECTED) {
+                auto* session = static_cast<ClientSession*>(client->_tempObject);
+                if (session) {
+                    sendRoomInit(client, "open");
+                }
+            }
+        }
+    }
+}
+
+void ChatManager::sendMeshBroadcast(uint8_t packetType, uint8_t roomType, const String& msg) {
+    MeshPacket packet;
+    packet.packetType = packetType;
+    packet.roomType = roomType;
+    packet.senderId = _nodeId;
+
+    std::memset(packet.message, 0, sizeof(packet.message));
+    std::strncpy(packet.message, msg.c_str(), sizeof(packet.message) - 1);
+
+    uint8_t broadcastMac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    esp_now_send(broadcastMac, reinterpret_cast<uint8_t*>(&packet), sizeof(MeshPacket));
+}
+
+void ChatManager::handleSyncRequest(uint32_t targetNodeId) {
+    Serial.println("[ESP-NOW] Verlaufs-Anforderung von Node " + String(targetNodeId) + " empfangen.");
+
+    // Segmentierte, häppchenweise Übertragung, um den Heap absolut stabil zu halten
+
+    // 1. Offener Raum senden
+    size_t openCount = _openRoom.size();
+    for (size_t i = 0; i < openCount; ++i) {
+        sendMeshBroadcast(3, 1, _openRoom.get(i)); // Type 3 (SYNC_MSG), Room 1 (open)
+        delay(15); // Kurze non-blocking Atempause für den Network Stack
+    }
+
+    // 2. Geschützter Raum senden
+    size_t lockedCount = _lockedRoom.size();
+    for (size_t i = 0; i < lockedCount; ++i) {
+        sendMeshBroadcast(3, 2, _lockedRoom.get(i)); // Type 3 (SYNC_MSG), Room 2 (locked)
+        delay(15);
+    }
+
+    // 3. Sync beendet signalisieren
+    sendMeshBroadcast(4, 1, ""); // Type 4: SYNC_END
+}
+
+void ChatManager::handleSyncResponse(const MeshPacket& packet) {
+    String msgPayload = String(packet.message);
+    MessageRingBuffer& targetRoom = (packet.roomType == 2) ? _lockedRoom : _openRoom;
+
+    // Dubletten-Prüfung vor dem Einfügen
+    bool exists = false;
+    size_t count = targetRoom.size();
+    for (size_t i = 0; i < count; ++i) {
+        if (targetRoom.get(i) == msgPayload) {
+            exists = true;
+            break;
+        }
+    }
+
+    if (!exists && msgPayload.length() > 0) {
+        targetRoom.add(msgPayload);
+    }
+}
+
+#endif

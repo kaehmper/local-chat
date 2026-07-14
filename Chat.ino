@@ -62,7 +62,8 @@ void setup() {
 
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig(apIP, apIP, subnet);
-    WiFi.softAP(Config::CHATNAME);
+    // Start AP on fixed channel so ESP-NOW matches the frequency
+    WiFi.softAP(Config::CHATNAME, nullptr, Config::MESH_CHANNEL);
 
     Serial.print("AP IP-Adresse: ");
     Serial.println(WiFi.softAPIP());
