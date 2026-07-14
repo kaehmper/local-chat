@@ -26,6 +26,20 @@ IPAddress subnet(255, 255, 255, 0);
 unsigned long lastTick = 0;
 
 // ---------- Webserver Handler ----------
+void handleRedirect(AsyncWebServerRequest *request) {
+    chatManager.registerActivity();
+    Serial.println("[CaptivePortal] Umleitung auf http://10.10.10.1/");
+
+    // Sende 302-Redirect mit Location-Header und HTML-Fallback-Body inklusive Meta-Refresh
+    AsyncWebServerResponse *response = request->beginResponse(302, "text/html",
+        "<html><head><meta http-equiv=\"refresh\" content=\"0;url=http://10.10.10.1/\"/></head>"
+        "<body><p>Weiterleitung zu <a href=\"http://10.10.10.1/\">CardijnChat</a>...</p></body></html>"
+    );
+    response->addHeader("Location", "http://10.10.10.1/");
+    response->addHeader("Cache-Control", "no-store, must-revalidate");
+    request->send(response);
+}
+
 void handleServeIndex(AsyncWebServerRequest *request) {
     chatManager.registerActivity();
 
@@ -34,8 +48,7 @@ void handleServeIndex(AsyncWebServerRequest *request) {
     // Dies ändert die Browser-Adresszeile und sichert die fehlerfreie Verbindung des WebSockets!
     String hostHeader = request->host();
     if (hostHeader != "10.10.10.1" && hostHeader != "10.10.10.1:80") {
-        Serial.println("[CaptivePortal] Umleitung von '/' auf http://10.10.10.1/");
-        request->redirect("http://10.10.10.1/");
+        handleRedirect(request);
         return;
     }
 
@@ -89,6 +102,14 @@ void setup() {
     // Web-Routen registrieren
     server.on("/", HTTP_GET, handleServeIndex);
 
+    // Explizite Captive Portal Endpoints für automatische Erkennung auf allen Betriebssystemen
+    server.on("/generate_204", HTTP_GET, handleRedirect);            // Android
+    server.on("/hotspot-detect.html", HTTP_GET, handleRedirect);     // Apple iOS/macOS
+    server.on("/library/test/success.html", HTTP_GET, handleRedirect); // Apple iOS/macOS
+    server.on("/success.txt", HTTP_GET, handleRedirect);             // Apple iOS/macOS
+    server.on("/connecttest.txt", HTTP_GET, handleRedirect);         // Windows
+    server.on("/ncsi.txt", HTTP_GET, handleRedirect);                // Windows
+
     // Fallback/Captive-Portal Handler für unbekannte Routen
     server.onNotFound([](AsyncWebServerRequest *request) {
         // Überprüfe den Host-Header. Wenn er nicht mit unserer IP übereinstimmt,
@@ -97,8 +118,7 @@ void setup() {
         // WebSocket-Client im Browser direkt dorthin verbinden kann!
         String hostHeader = request->host();
         if (hostHeader != "10.10.10.1" && hostHeader != "10.10.10.1:80") {
-            Serial.println("[CaptivePortal] Umleitung von '" + hostHeader + "' auf http://10.10.10.1/");
-            request->redirect("http://10.10.10.1/");
+            handleRedirect(request);
         } else {
             // Falls der Host bereits 10.10.10.1 ist, aber die Route unbekannt war,
             // liefern wir das Frontend aus, um unschöne 404-Fehler zu vermeiden.
