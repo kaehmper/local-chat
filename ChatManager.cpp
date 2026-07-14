@@ -1,4 +1,5 @@
 #include "ChatManager.h"
+#include <cstring>
 
 // ---------- ClientSession Struktur ----------
 struct ClientSession {
@@ -44,9 +45,9 @@ ChatManager::ChatManager()
 void ChatManager::begin(AsyncWebServer* server) {
     _lastActivity = millis();
 
-    // WebSocket-Event-Callback registrieren
+    // WebSocket-Event-Callback registrieren mit versionskompatiblem AwsEventType
     _ws.onEvent([this](AsyncWebSocket* s, AsyncWebSocketClient* c,
-                       AwsTemplateType t, void* arg, uint8_t* d, size_t l) {
+                       AwsEventType t, void* arg, uint8_t* d, size_t l) {
         this->onWsEvent(s, c, t, arg, d, l);
     });
 
@@ -59,7 +60,7 @@ void ChatManager::cleanup() {
 
 bool ChatManager::isClientAuthenticated(AsyncWebSocketClient* client) const {
     if (!client) return false;
-    auto* session = static_cast<ClientSession*>(client->getTempObject());
+    auto* session = static_cast<ClientSession*>(client->_tempObject);
     return session && session->authenticated;
 }
 
@@ -88,27 +89,27 @@ String ChatManager::generateSessionId() {
 }
 
 void ChatManager::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
-                            AwsTemplateType type, void* arg, uint8_t* data, size_t len) {
+                            AwsEventType type, void* arg, uint8_t* data, size_t len) {
     _lastActivity = millis();
 
     switch (type) {
         case WS_EVT_CONNECT: {
             String uid = generateSessionId();
-            client->setTempObject(new ClientSession{uid, false, ""});
+            client->_tempObject = new ClientSession{uid, false, ""};
             break;
         }
         case WS_EVT_DISCONNECT: {
-            auto* session = static_cast<ClientSession*>(client->getTempObject());
+            auto* session = static_cast<ClientSession*>(client->_tempObject);
             if (session) {
                 delete session;
-                client->setTempObject(nullptr);
+                client->_tempObject = nullptr;
             }
             break;
         }
         case WS_EVT_DATA: {
             AwsFrameInfo* info = static_cast<AwsFrameInfo*>(arg);
             if (info->opcode == WS_TEXT) {
-                auto* session = static_cast<ClientSession*>(client->getTempObject());
+                auto* session = static_cast<ClientSession*>(client->_tempObject);
                 if (session) {
                     if (info->index == 0) {
                         session->wsBuffer = "";
@@ -121,7 +122,7 @@ void ChatManager::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client
 
                     if (info->index + len >= info->len) {
                         handleWsTextMessage(client, session->wsBuffer);
-                        session->wsBuffer = ""; // free memory
+                        session->wsBuffer = ""; // Speicher freigeben
                     }
                 }
             }
@@ -147,7 +148,7 @@ static String unescapeJsonString(const String& val) {
                 case 'n':  result += '\n'; i++; break;
                 case 'r':  result += '\r'; i++; break;
                 case 't':  result += '\t'; i++; break;
-                default:   result += '\\'; break; // Keep backslash if not recognized
+                default:   result += '\\'; break; // Unbekannte Sequenz: Backslash behalten
             }
         } else {
             result += val[i];
@@ -158,20 +159,20 @@ static String unescapeJsonString(const String& val) {
 
 // Hilfsfunktion zum Parsen einfacher JSON-Schlüssel (Vermeidet Abhängigkeit von ArduinoJson)
 static String getJsonValue(const String& json, const String& key) {
-    // 1. Check for string type: "key":"value"
+    // 1. String-Typ suchen: "key":"value"
     String searchKey = "\"" + key + "\":\"";
     int start = json.indexOf(searchKey);
     if (start != -1) {
         start += searchKey.length();
 
-        // Find the correct closing unescaped quote
+        // Finde das korrekte schließende, nicht-escapte Anführungszeichen
         int end = -1;
         int curr = start;
         while (curr < (int)json.length()) {
             int nextQuote = json.indexOf('"', curr);
             if (nextQuote == -1) break;
 
-            // Count preceding backslashes to see if the quote is escaped
+            // Backslashes davor zählen
             int backslashes = 0;
             int bsIndex = nextQuote - 1;
             while (bsIndex >= start && json[bsIndex] == '\\') {
@@ -189,7 +190,7 @@ static String getJsonValue(const String& json, const String& key) {
             return unescapeJsonString(json.substring(start, end));
         }
     } else {
-        // 2. Check for other types (boolean, number, etc.): "key":value
+        // 2. Andere Typen (Zahl, Boolean): "key":value
         searchKey = "\"" + key + "\":";
         start = json.indexOf(searchKey);
         if (start != -1) {
@@ -209,7 +210,7 @@ static String getJsonValue(const String& json, const String& key) {
 }
 
 void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String& message) {
-    auto* session = static_cast<ClientSession*>(client->getTempObject());
+    auto* session = static_cast<ClientSession*>(client->_tempObject);
     if (!session) return;
 
     String type = getJsonValue(message, "type");
@@ -255,13 +256,13 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
 }
 
 void ChatManager::sendRoomInit(AsyncWebSocketClient* client, const String& room) {
-    auto* session = static_cast<ClientSession*>(client->getTempObject());
+    auto* session = static_cast<ClientSession*>(client->_tempObject);
     if (!session) return;
 
     const MessageRingBuffer& buffer = (room == "locked") ? _lockedRoom : _openRoom;
     size_t count = buffer.size();
 
-    // Pre-calculate exact required memory size to prevent heap fragmentation
+    // Exakten Speicherbedarf vorab berechnen, um Heap-Fragmentierung zu verhindern
     size_t requiredSize = 128 + room.length() + session->uid.length();
     for (size_t i = 0; i < count; ++i) {
         requiredSize += std::strlen(buffer.get(i)) + 8;
@@ -291,6 +292,10 @@ void ChatManager::sendRoomInit(AsyncWebSocketClient* client, const String& room)
     client->text(json);
 }
 
+// Hilfsfunktionen zur versionsunabhängigen Ermittlung des Zeigers auf einen Client
+static inline AsyncWebSocketClient* getClientPtr(AsyncWebSocketClient* p) { return p; }
+static inline AsyncWebSocketClient* getClientPtr(AsyncWebSocketClient& r) { return &r; }
+
 void ChatManager::broadcastMessage(const String& room, const String& msg) {
     String escapedMsg = msg;
     escapedMsg.replace("\\", "\\\\");
@@ -300,14 +305,15 @@ void ChatManager::broadcastMessage(const String& room, const String& msg) {
     json.reserve(64 + room.length() + msg.length());
     json += "{\"type\":\"msg\",\"room\":\"" + room + "\",\"msg\":\"" + escapedMsg + "\"}";
 
-    for (auto* client : _ws.getClients()) {
+    for (auto&& client_item : _ws.getClients()) {
+        AsyncWebSocketClient* client = getClientPtr(client_item);
         if (client && client->status() == WS_CONNECTED) {
-            // Close clients with stalled/backlogged queue to protect ESP8266 memory
+            // Verbindung bei stockender Warteschlange trennen, um Speicher zu schonen
             if (client->queueLen() > 4) {
                 client->close();
                 continue;
             }
-            auto* session = static_cast<ClientSession*>(client->getTempObject());
+            auto* session = static_cast<ClientSession*>(client->_tempObject);
             if (session) {
                 if (room == "locked" && !session->authenticated) {
                     continue;

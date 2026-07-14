@@ -96,7 +96,7 @@ private:
 
     // Verarbeitet WebSocket-Ereignisse
     void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
-                   AwsTemplateType type, void* arg, uint8_t* data, size_t len);
+                   AwsEventType type, void* arg, uint8_t* data, size_t len);
 
     // Behandelt eingehende Text-Nachrichten des WebSockets
     void handleWsTextMessage(AsyncWebSocketClient* client, const String& message);
