@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>PopupChat</title>
+  <style>
+    :root {
+      --bg-color: #f0f2f5;
+      --primary-color: #0084ff;
+      --primary-hover: #006bcf;
+      --text-color: #1c1e21;
+      --text-muted: #65676b;
+      --card-bg: #ffffff;
+      --border-color: #e4e6eb;
+      --msg-self: #0084ff;
+      --msg-self-text: #ffffff;
+      --msg-other: #e4e6eb;
+      --msg-other-text: #050505;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      height: -webkit-fill-available;
+      overflow: hidden;
+    }
+
+    html {
+      height: -webkit-fill-available;
+    }
+
+    /* --- Header --- */
+    header {
+      background-color: var(--card-bg);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 16px;
+      z-index: 10;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .brand-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      max-width: 600px;
+      margin-bottom: 8px;
+    }
+
+    .brand {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--primary-color);
+      letter-spacing: -0.5px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #ff4d4f;
+      transition: background-color 0.3s;
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    .status-dot.online {
+      background-color: #52c41a;
+    }
+
+    .connection-status {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+    }
+
+    /* --- Tabs --- */
+    .tabs {
+      display: flex;
+      background: #e4e6eb;
+      padding: 3px;
+      border-radius: 20px;
+      width: 100%;
+      max-width: 600px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      border: none;
+      background: none;
+      padding: 8px 12px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: 17px;
+      transition: all 0.2s ease-in-out;
+      outline: none;
+    }
+
+    .tab-btn.active {
+      background: var(--card-bg);
+      color: var(--primary-color);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    /* --- Hauptbereich --- */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-width: 600px;
+      margin: 0 auto;
+      position: relative;
+      background: var(--card-bg);
+      border-left: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-color);
+      overflow: hidden;
+    }
+
+    /* --- Chat-Nachrichten --- */
+    .chat-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .message {
+      max-width: 75%;
+      padding: 10px 14px;
+      border-radius: 18px;
+      font-size: 15px;
+      line-height: 1.4;
+      position: relative;
+      word-break: break-word;
+      animation: fadeIn 0.2s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message.other {
+      background-color: var(--msg-other);
+      color: var(--msg-other-text);
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+
+    .message.self {
+      background-color: var(--msg-self);
+      color: var(--msg-self-text);
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg-meta {
+      font-size: 10px;
+      margin-bottom: 3px;
+      display: block;
+      font-weight: 700;
+      opacity: 0.7;
+    }
+
+    /* --- Chat Eingabebereich --- */
+    .input-area {
+      padding: 12px 16px;
+      background-color: var(--card-bg);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .message-input {
+      flex: 1;
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-color);
+      padding: 10px 16px;
+      border-radius: 20px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .message-input:focus {
+      border-color: var(--primary-color);
+      background-color: var(--card-bg);
+    }
+
+    .send-btn {
+      background-color: var(--primary-color);
+      border: none;
+      color: white;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.2s, transform 0.1s;
+      outline: none;
+      flex-shrink: 0;
+    }
+
+    .send-btn:hover {
+      background-color: var(--primary-hover);
+    }
+
+    .send-btn:active {
+      transform: scale(0.95);
+    }
+
+    .send-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+      transform: rotate(45deg) translate(-1px, 1px);
+    }
+
+    /* --- Login Overlay --- */
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(240, 242, 245, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .login-card {
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 360px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      border: 1px solid var(--border-color);
+      text-align: center;
+    }
+
+    .login-card h2 {
+      font-size: 18px;
+      margin-bottom: 12px;
+      color: var(--text-color);
+    }
+
+    .login-card p {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    .login-input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 16px;
+      margin-bottom: 16px;
+      outline: none;
+      text-align: center;
+    }
+
+    .login-input:focus {
+      border-color: var(--primary-color);
+    }
+
+    .login-btn {
+      width: 100%;
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .login-btn:hover {
+      background: var(--primary-hover);
+    }
+
+    .info-bar {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 6px;
+      background: var(--bg-color);
+      border-bottom: 1px solid var(--border-color);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand-container">
+      <span class="brand">PopupChat</span>
+      <div class="connection-status">
+        <span id="status-dot" class="status-dot"></span>
+        <span id="status-text">Verbinde...</span>
+      </div>
+    </div>
+    <div class="tabs">
+      <button id="tab-open" class="tab-btn active" onclick="switchRoom('open')">Offener Raum</button>
+      <button id="tab-locked" class="tab-btn" onclick="switchRoom('locked')">Geschützter Raum</button>
+    </div>
+  </header>
+
+  <div class="info-bar">
+    Lokaler Chat. Nachrichten sind anonym und flüchtig. Max. 40 Nachrichten.
+  </div>
+
+  <main>
+    <div id="chat-container" class="chat-container"></div>
+
+    <div class="input-area">
+      <input type="text" id="msg-input" class="message-input" placeholder="Nachricht schreiben..." maxlength="200" onkeydown="if(event.key === 'Enter') sendMsg()">
+      <button class="send-btn" onclick="sendMsg()" aria-label="Senden">
+        <svg viewBox="0 0 24 24">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+        </svg>
+      </button>
+    </div>
+
+    <div id="login-overlay" class="overlay">
+      <div class="login-card">
+        <h2>Passwort erforderlich</h2>
+        <p>Geben Sie das Geheimwort ein, um den geschützten Raum zu betreten.</p>
+        <input type="password" id="password-input" class="login-input" placeholder="Passwort" onkeydown="if(event.key === 'Enter') submitPassword()">
+        <button class="login-btn" onclick="submitPassword()">Entsperren</button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let ws;
+    let currentRoom = 'open';
+    let myUid = '';
+    let isAuthenticated = false;
+    let reconnectTimeout = null;
+
+    const chatContainer = document.getElementById('chat-container');
+    const msgInput = document.getElementById('msg-input');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const loginOverlay = document.getElementById('login-overlay');
+    const passwordInput = document.getElementById('password-input');
+    const tabOpen = document.getElementById('tab-open');
+    const tabLocked = document.getElementById('tab-locked');
+
+    function connectWS() {
+      if (ws) {
+        ws.close();
+      }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        statusDot.className = 'status-dot online';
+        statusText.innerText = 'Verbunden';
+        if (reconnectTimeout) {
+          clearTimeout(reconnectTimeout);
+          reconnectTimeout = null;
+        }
+        requestRoomInit();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'init') {
+            myUid = data.uid || '';
+            isAuthenticated = data.authenticated || false;
+            
+            if (data.room === currentRoom) {
+              if (currentRoom === 'locked' && !isAuthenticated) {
+                showLoginOverlay(true);
+              } else {
+                showLoginOverlay(false);
+                renderMessages(data.messages || []);
+              }
+            }
+          } 
+          else if (data.type === 'msg') {
+            if (data.room === currentRoom) {
+              appendMessage(data.msg);
+            }
+          }
+          else if (data.type === 'auth_result') {
+            if (data.success) {
+              isAuthenticated = true;
+              showLoginOverlay(false);
+              requestRoomInit();
+            } else {
+              alert('Falsches Passwort!');
+              passwordInput.value = '';
+              passwordInput.focus();
+            }
+          }
+        } catch (e) {
+          console.error("Fehler beim Verarbeiten der WebSocket-Nachricht:", e);
+        }
+      };
+
+      ws.onclose = () => {
+        statusDot.className = 'status-dot';
+        statusText.innerText = 'Getrennt';
+        if (!reconnectTimeout) {
+          reconnectTimeout = setTimeout(connectWS, 2000);
+        }
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    }
+
+    function requestRoomInit() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'init',
+          room: currentRoom
+        }));
+      }
+    }
+
+    function switchRoom(room) {
+      if (currentRoom === room) return;
+      currentRoom = room;
+
+      if (room === 'open') {
+        tabOpen.classList.add('active');
+        tabLocked.classList.remove('active');
+        showLoginOverlay(false);
+        requestRoomInit();
+      } else {
+        tabOpen.classList.remove('active');
+        tabLocked.classList.add('active');
+        if (!isAuthenticated) {
+          showLoginOverlay(true);
+        } else {
+          showLoginOverlay(false);
+          requestRoomInit();
+        }
+      }
+    }
+
+    function showLoginOverlay(show) {
+      if (show) {
+        loginOverlay.classList.add('active');
+        passwordInput.focus();
+      } else {
+        loginOverlay.classList.remove('active');
+        passwordInput.value = '';
+      }
+    }
+
+    function submitPassword() {
+      const pwd = passwordInput.value;
+      if (!pwd) return;
+      
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'auth',
+          password: pwd
+        }));
+      }
+    }
+
+    function sendMsg() {
+      const text = msgInput.value.trim();
+      if (!text) return;
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'post',
+          room: currentRoom,
+          text: text
+        }));
+        msgInput.value = '';
+        msgInput.focus();
+      } else {
+        alert('Keine Verbindung zum Server.');
+      }
+    }
+
+    function renderMessages(messages) {
+      chatContainer.innerHTML = '';
+      messages.forEach(msg => appendMessage(msg, false));
+      scrollToBottom();
+    }
+
+    function appendMessage(msgStr, scroll = true) {
+      let uid = '';
+      let text = msgStr;
+      
+      const match = msgStr.match(/^\[([A-Fa-f0-9]{4})\]\s(.*)/);
+      if (match) {
+        uid = match[1];
+        text = match[2];
+      }
+
+      const msgDiv = document.createElement('div');
+      const isSelf = (uid === myUid && myUid !== '');
+      msgDiv.className = `message ${isSelf ? 'self' : 'other'}`;
+
+      const metaSpan = document.createElement('span');
+      metaSpan.className = 'msg-meta';
+      metaSpan.innerText = isSelf ? `Du (${uid})` : (uid ? `Nutzer ${uid}` : 'System');
+      msgDiv.appendChild(metaSpan);
+
+      const textNode = document.createTextNode(text);
+      msgDiv.appendChild(textNode);
+
+      chatContainer.appendChild(msgDiv);
+
+      if (scroll) {
+        scrollToBottom();
+      }
+    }
+
+    function scrollToBottom() {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    window.onload = () => {
+      connectWS();
+      document.body.addEventListener('touchmove', (e) => {
+        if (e.target.closest('#chat-container')) return;
+        e.preventDefault();
+      }, { passive: false });
+    };
+  </script>
+</body>
+</html>
