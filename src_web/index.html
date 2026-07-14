@@ -283,6 +283,7 @@
 
           if (data.type === 'init') {
             myUid = data.uid || '';
+            localStorage.setItem('cardijn_uid', myUid);
             renderMessages(data.messages || []);
           }
           else if (data.type === 'msg') {
@@ -308,8 +309,10 @@
 
     function requestRoomInit() {
       if (ws && ws.readyState === WebSocket.OPEN) {
+        const savedUid = localStorage.getItem('cardijn_uid');
         ws.send(JSON.stringify({
-          type: 'init'
+          type: 'init',
+          uid: savedUid || ''
         }));
       }
     }

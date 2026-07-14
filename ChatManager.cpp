@@ -228,6 +228,24 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
     String type = getJsonValue(message, "type");
 
     if (type == "init") {
+        String requestedUid = getJsonValue(message, "uid");
+        // Validiere die angeforderte UID: Muss exakt aus 4 Hexadezimalzeichen bestehen
+        bool isValid = (requestedUid.length() == 4);
+        if (isValid) {
+            for (int i = 0; i < 4; ++i) {
+                char c = requestedUid[i];
+                if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))) {
+                    isValid = false;
+                    break;
+                }
+            }
+        }
+
+        if (isValid) {
+            session->uid = requestedUid;
+            session->uid.toUpperCase(); // In Großbuchstaben vereinheitlichen
+            Serial.println("[Session] Vorhandene UID übernommen: " + session->uid);
+        }
         sendRoomInit(client);
     }
     else if (type == "post") {
