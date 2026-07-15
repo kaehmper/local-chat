@@ -73,22 +73,27 @@ void CustomDNSServer::process() {
     uint16_t qtype = (packet[qname_offset] << 8) | packet[qname_offset + 1];
     uint16_t qclass = (packet[qname_offset + 2] << 8) | packet[qname_offset + 3];
 
-    bool isTypeA = (qtype == 0x0001);   // TYPE A (IPv4)
-    bool isClassIN = (qclass == 0x0001); // CLASS IN (Internet)
+    bool isTypeAOrAny = (qtype == 0x0001 || qtype == 0x00FF);   // TYPE A (IPv4) or TYPE ANY
+    bool isClassINOrAny = (qclass == 0x0001 || qclass == 0x00FF); // CLASS IN (Internet) or CLASS ANY
+
+    size_t question_end = qname_offset + 4;
 
     // Antwort-Puffer vorbereiten
     uint8_t response[DNS_PACKET_MAX_SIZE];
 
-    // Header kopieren und anpassen
-    std::memcpy(response, packet, bytesRead);
+    // Nur Header und die erste Frage kopieren, alle zusätzlichen Sektionen (wie EDNS0) verwerfen!
+    std::memcpy(response, packet, question_end);
 
     // Flags: QR=1 (Antwort), Opcode=0 (Standardabfrage), AA=1 (Autoritativ), TC=0, RD=1 (Rekursion erwünscht)
     response[2] = 0x85;
     // Flags: RA=1 (Rekursion verfügbar), Z=0, RCODE=0 (Kein Fehler)
     response[3] = 0x80;
 
-    // QDCOUNT bleibt wie in der Anfrage
-    // ANCOUNT auf 0 initialisieren (wird auf 1 gesetzt, falls TYPE A)
+    // QDCOUNT auf 1 festlegen (da wir nur die erste Frage kopieren)
+    response[4] = 0x00;
+    response[5] = 0x01;
+
+    // ANCOUNT auf 0 initialisieren (wird auf 1 gesetzt, falls TYPE A/ANY)
     response[6] = 0x00;
     response[7] = 0x00;
     // NSCOUNT auf 0 setzen
@@ -98,12 +103,12 @@ void CustomDNSServer::process() {
     response[10] = 0x00;
     response[11] = 0x00;
 
-    size_t offset = bytesRead;
+    size_t offset = question_end;
 
-    // Nur für TYPE A (IPv4) und CLASS IN (Internet) eine Antwort anhängen.
+    // Nur für TYPE A/ANY (IPv4) und CLASS IN/ANY (Internet) eine Antwort anhängen.
     // Andere Typen (z. B. AAAA) erhalten eine leere Antwort mit RCODE=0 (NOERROR),
     // um Timeouts auf modernen Geräten zu vermeiden.
-    if (isTypeA && isClassIN) {
+    if (isTypeAOrAny && isClassINOrAny) {
         // ANCOUNT auf 1 setzen
         response[7] = 0x01;
 
