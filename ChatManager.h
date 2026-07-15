@@ -5,6 +5,19 @@
 
 #include "Config.h"
 
+#if ENABLE_MESH
+#include <espnow.h>
+
+#pragma pack(push, 1)
+struct MeshPacket {
+    uint8_t packetType;       // 1 = CHAT_MSG, 2 = SYNC_REQ, 3 = SYNC_MSG, 4 = SYNC_END
+    uint32_t senderId;        // Unique node sender ID
+    char message[201];        // Text message payload
+};
+#pragma pack(pop)
+
+#endif
+
 /**
  * @class MessageRingBuffer
  * @brief Eine hocheffiziente Ringpuffer-Implementierung für Chat-Nachrichten.
@@ -53,14 +66,9 @@ public:
     void begin(AsyncWebServer* server);
 
     /**
-     * @brief Führt zyklische Aufräumarbeiten am WebSocket durch.
+     * @brief Führt zyklische Aufräumarbeiten am WebSocket und Mesh durch.
      */
     void cleanup();
-
-    /**
-     * @brief Überprüft, ob ein Client authentifiziert ist.
-     */
-    bool isClientAuthenticated(AsyncWebSocketClient* client) const;
 
     /**
      * @brief Gibt den Inaktivitäts-Zeitstempel zurück.
@@ -81,9 +89,8 @@ private:
     // WebSocket-Objekt für Echtzeitkommunikation
     AsyncWebSocket _ws;
 
-    // Chat-Räume
+    // Chat-Raum
     MessageRingBuffer _openRoom;
-    MessageRingBuffer _lockedRoom;
 
     // Zeitstempel der letzten Nutzeraktivität
     uint32_t _lastActivity;
@@ -102,8 +109,24 @@ private:
     void handleWsTextMessage(AsyncWebSocketClient* client, const String& message);
 
     // Sendet Raum-Initialisierungsdaten an einen bestimmten Client
-    void sendRoomInit(AsyncWebSocketClient* client, const String& room);
+    void sendRoomInit(AsyncWebSocketClient* client);
 
-    // Broadcastet eine Nachricht an alle Clients eines bestimmten Raumes
-    void broadcastMessage(const String& room, const String& msg);
+    // Broadcastet eine Nachricht an alle Clients des Raumes
+    void broadcastMessage(const String& msg);
+
+#if ENABLE_MESH
+public:
+    // Statischer Callback für ESP-NOW Empfang
+    static void onEspNowRecv(uint8_t* mac, uint8_t* incomingData, uint8_t len);
+
+private:
+    uint32_t _nodeId;
+    uint32_t _lastPingTime;
+
+    void initMesh();
+    void sendMeshBroadcast(uint8_t packetType, const String& msg);
+    void handleIncomingPacket(const MeshPacket& packet);
+    void handleSyncRequest(uint32_t targetNodeId);
+    void handleSyncResponse(const MeshPacket& packet);
+#endif
 };

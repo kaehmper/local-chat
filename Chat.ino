@@ -26,8 +26,31 @@ IPAddress subnet(255, 255, 255, 0);
 unsigned long lastTick = 0;
 
 // ---------- Webserver Handler ----------
+void handleRedirect(AsyncWebServerRequest *request) {
+    chatManager.registerActivity();
+    Serial.println("[CaptivePortal] Umleitung auf http://10.10.10.1/");
+
+    // Sende 302-Redirect mit Location-Header und HTML-Fallback-Body inklusive Meta-Refresh
+    AsyncWebServerResponse *response = request->beginResponse(302, "text/html",
+        "<html><head><meta http-equiv=\"refresh\" content=\"0;url=http://10.10.10.1/\"/></head>"
+        "<body><p>Weiterleitung zu <a href=\"http://10.10.10.1/\">CardijnChat</a>...</p></body></html>"
+    );
+    response->addHeader("Location", "http://10.10.10.1/");
+    response->addHeader("Cache-Control", "no-store, must-revalidate");
+    request->send(response);
+}
+
 void handleServeIndex(AsyncWebServerRequest *request) {
     chatManager.registerActivity();
+
+    // Falls der Host nicht unsere lokale IP-Adresse ist (z.B. bei Eingabe von neverssl.com),
+    // leiten wir den Client sofort per 302-Redirect auf unsere kanonische IP http://10.10.10.1/ um.
+    // Dies ändert die Browser-Adresszeile und sichert die fehlerfreie Verbindung des WebSockets!
+    String hostHeader = request->host();
+    if (hostHeader != "10.10.10.1" && hostHeader != "10.10.10.1:80") {
+        handleRedirect(request);
+        return;
+    }
 
     // Hocheffizientes Senden des vor-komprimierten SPA-Frontends aus dem PROGMEM
     AsyncWebServerResponse *response = request->beginResponse_P(
@@ -62,7 +85,8 @@ void setup() {
 
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig(apIP, apIP, subnet);
-    WiFi.softAP(Config::CHATNAME);
+    // Start AP on fixed channel so ESP-NOW matches the frequency
+    WiFi.softAP(Config::CHATNAME, nullptr, Config::MESH_CHANNEL);
 
     Serial.print("AP IP-Adresse: ");
     Serial.println(WiFi.softAPIP());
@@ -78,15 +102,28 @@ void setup() {
     // Web-Routen registrieren
     server.on("/", HTTP_GET, handleServeIndex);
 
+    // Explizite Captive Portal Endpoints für automatische Erkennung auf allen Betriebssystemen
+    server.on("/generate_204", HTTP_GET, handleRedirect);            // Android
+    server.on("/hotspot-detect.html", HTTP_GET, handleRedirect);     // Apple iOS/macOS
+    server.on("/library/test/success.html", HTTP_GET, handleRedirect); // Apple iOS/macOS
+    server.on("/success.txt", HTTP_GET, handleRedirect);             // Apple iOS/macOS
+    server.on("/connecttest.txt", HTTP_GET, handleRedirect);         // Windows
+    server.on("/ncsi.txt", HTTP_GET, handleRedirect);                // Windows
+
     // Fallback/Captive-Portal Handler für unbekannte Routen
     server.onNotFound([](AsyncWebServerRequest *request) {
-        // Logge Captive-Portal Versuche
-        Serial.print("Anfrage an nicht existierende URL: ");
-        Serial.println(request->url());
-
-        // Jede nicht gefundene Anfrage (insb. Captive-Portal-Prüfungen der Smartphones)
-        // beantworten wir direkt mit unserem SPA-Frontend. Das spart Ladezeit und Redirects!
-        handleServeIndex(request);
+        // Überprüfe den Host-Header. Wenn er nicht mit unserer IP übereinstimmt,
+        // leiten wir den Browser per 302-Redirect direkt auf unsere IP-Adresse um.
+        // Dies ändert die Adresszeile des Browsers auf 10.10.10.1, sodass der
+        // WebSocket-Client im Browser direkt dorthin verbinden kann!
+        String hostHeader = request->host();
+        if (hostHeader != "10.10.10.1" && hostHeader != "10.10.10.1:80") {
+            handleRedirect(request);
+        } else {
+            // Falls der Host bereits 10.10.10.1 ist, aber die Route unbekannt war,
+            // liefern wir das Frontend aus, um unschöne 404-Fehler zu vermeiden.
+            handleServeIndex(request);
+        }
     });
 
     // Webserver starten

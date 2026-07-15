@@ -7,15 +7,21 @@
  * @brief Zentrale Konfiguration für den PopupChat.
  */
 
+#define ENABLE_MESH 1 // Auf 0 setzen, um Mesh zu deaktivieren und als Standalone-Knoten zu laufen
+
 namespace Config {
 
 // ---------- WLAN & Netzwerk ----------
-constexpr char CHATNAME[]        = "PopupChat";             ///< Name des Access Points (SSID)
-constexpr char BLURB[]           = "Lokaler Chat in zwei Räumen"; ///< Slogan/Untertitel
-constexpr char LOCK_PASSWORD[]   = "secret";                ///< Passwort für den geschützten Raum
-constexpr char AUTH_SALT[]       = "popup2024";             ///< Salt für kryptographische Verifizierungen
+constexpr char CHATNAME[]        = "CardijnChat";           ///< Name des Access Points (SSID)
+constexpr char BLURB[]           = "Lokaler CardijnChat";   ///< Slogan/Untertitel
 constexpr uint16_t HTTP_PORT     = 80;                      ///< Port des Webservers
 constexpr uint16_t DNS_PORT      = 53;                      ///< Port des DNS-Servers
+
+// ---------- Mesh-Netzwerk ----------
+constexpr char MESH_PREFIX[]     = "PopupMeshPrivate";      ///< SSID für das interne Mesh-Backhaul
+constexpr char MESH_PASSWORD[]   = "meshsecure123";         ///< Passwort für die Mesh-Verschlüsselung
+constexpr uint16_t MESH_PORT     = 5555;                    ///< UDP-Port für painlessMesh
+constexpr uint8_t MESH_CHANNEL   = 6;                       ///< Wi-Fi Kanal (AP und Mesh MÜSSEN auf dem gleichen Kanal liegen!)
 
 // ---------- Chat-Einstellungen ----------
 constexpr size_t MAX_MESSAGES    = 40;                      ///< Maximale Anzahl an Nachrichten pro Raum
