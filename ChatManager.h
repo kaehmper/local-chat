@@ -114,6 +114,17 @@ private:
     String _tickerMessages[3];
     size_t _tickerCount;
 
+    // Online-Nutzer-Verwaltung (lokal & mesh-weit)
+    static constexpr size_t MAX_ONLINE_USERS = 32;
+    OnlineUser _onlineUsers[MAX_ONLINE_USERS];
+    size_t _onlineUsersCount;
+    uint32_t _lastUserListBroadcastTime;
+
+    void updateOnlineUsersList();
+    void broadcastUserList();
+    void addOrUpdateUser(const char* uid, bool isLocal);
+    void handleTttMessage(AsyncWebSocketClient* client, const String& message);
+
     // Generiert eine sichere 4-stellige Hex-ID mithilfe des Hardware-RNG des ESP8266
     String generateSessionId();
 
@@ -152,5 +163,7 @@ private:
     void handleIncomingPacket(const MeshPacket& packet);
     void handleSyncRequest(uint32_t targetNodeId);
     void handleSyncResponse(const MeshPacket& packet);
+    void handleUserMeshPing(const String& payload);
+    void handleMeshTttMessage(const String& payload);
 #endif
 };

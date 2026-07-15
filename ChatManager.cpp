@@ -42,7 +42,7 @@ const char* MessageRingBuffer::get(size_t index) const {
 // ==================== ChatManager ====================
 
 ChatManager::ChatManager()
-    : _ws("/ws"), _lastActivity(0), _tickerCount(0) {
+    : _ws("/ws"), _lastActivity(0), _tickerCount(0), _onlineUsersCount(0), _lastUserListBroadcastTime(0) {
 #if ENABLE_MESH
     _nodeId = 0;
     _lastPingTime = 0;
@@ -70,8 +70,14 @@ void ChatManager::begin(AsyncWebServer* server) {
 
 void ChatManager::cleanup() {
     _ws.cleanupClients();
-#if ENABLE_MESH
+
     uint32_t now = millis();
+    if (now - _lastUserListBroadcastTime > 4000) {
+        _lastUserListBroadcastTime = now;
+        broadcastUserList();
+    }
+
+#if ENABLE_MESH
     if (now - _lastPingTime > 60000) { // Alle 60 Sekunden periodischer Sync-Request
         _lastPingTime = now;
         sendMeshBroadcast(2, ""); // SYNC_REQ senden
@@ -266,7 +272,15 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
             session->uid.toUpperCase(); // In Großbuchstaben vereinheitlichen
             Serial.println("[Session] Vorhandene UID übernommen: " + session->uid);
         }
+
+        // Füge den User sofort zur Online-Liste hinzu und sende ein Update
+        addOrUpdateUser(session->uid.c_str(), true);
+        broadcastUserList();
+
         sendRoomInit(client);
+    }
+    else if (type == "ttt") {
+        handleTttMessage(client, message);
     }
     else if (type == "post") {
         String rawText = getJsonValue(message, "text");
@@ -396,6 +410,129 @@ String ChatManager::getLastTickerMessage(size_t index) const {
     return _tickerMessages[index];
 }
 
+void ChatManager::addOrUpdateUser(const char* uid, bool isLocal) {
+    if (!uid || std::strlen(uid) != 4) return;
+
+    uint32_t now = millis();
+
+    // Suchen, ob der Benutzer bereits vorhanden ist
+    for (size_t i = 0; i < _onlineUsersCount; ++i) {
+        if (std::strcmp(_onlineUsers[i].uid, uid) == 0) {
+            _onlineUsers[i].lastSeen = now;
+            _onlineUsers[i].isLocal = isLocal;
+            return;
+        }
+    }
+
+    // Wenn nicht vorhanden, neu hinzufügen (falls Platz ist)
+    if (_onlineUsersCount < MAX_ONLINE_USERS) {
+        std::strncpy(_onlineUsers[_onlineUsersCount].uid, uid, 4);
+        _onlineUsers[_onlineUsersCount].uid[4] = '\0';
+        _onlineUsers[_onlineUsersCount].lastSeen = now;
+        _onlineUsers[_onlineUsersCount].isLocal = isLocal;
+        _onlineUsersCount++;
+    }
+}
+
+void ChatManager::updateOnlineUsersList() {
+    uint32_t now = millis();
+
+    // 1. Behalte Remote-User, die noch nicht abgelaufen sind (jünger als 15 Sekunden)
+    size_t writeIdx = 0;
+    for (size_t i = 0; i < _onlineUsersCount; ++i) {
+        if (!_onlineUsers[i].isLocal) {
+            if (now - _onlineUsers[i].lastSeen < 15000) {
+                _onlineUsers[writeIdx++] = _onlineUsers[i];
+            }
+        }
+    }
+    _onlineUsersCount = writeIdx;
+
+    // 2. Füge alle aktuell aktiv verbundenen WebSocket-Nutzer wieder als lokal hinzu
+    for (auto&& client_item : _ws.getClients()) {
+        AsyncWebSocketClient* client = getClientPtr(client_item);
+        if (client && client->status() == WS_CONNECTED) {
+            auto* session = static_cast<ClientSession*>(client->_tempObject);
+            if (session && session->uid.length() == 4) {
+                addOrUpdateUser(session->uid.c_str(), true);
+            }
+        }
+    }
+}
+
+void ChatManager::broadcastUserList() {
+    updateOnlineUsersList();
+
+    // 1. Lokale Benutzer sammeln, um sie an andere Nodes via ESP-NOW zu senden
+    String localUids = "";
+    for (size_t i = 0; i < _onlineUsersCount; ++i) {
+        if (_onlineUsers[i].isLocal) {
+            if (localUids.length() > 0) localUids += ",";
+            localUids += _onlineUsers[i].uid;
+        }
+    }
+
+#if ENABLE_MESH
+    // Sende lokalen User-Ping an andere Mesh-Knoten (Type 5)
+    if (localUids.length() > 0) {
+        sendMeshBroadcast(5, localUids);
+    }
+#endif
+
+    // 2. Erstelle JSON mit ALLEN aktiven Online-Nutzern und sende es an alle WebSockets
+    String json;
+    json.reserve(256);
+    json += "{\"type\":\"users\",\"list\":[";
+    for (size_t i = 0; i < _onlineUsersCount; ++i) {
+        json += "\"" + String(_onlineUsers[i].uid) + "\"";
+        if (i < _onlineUsersCount - 1) {
+            json += ",";
+        }
+    }
+    json += "]}";
+
+    for (auto&& client_item : _ws.getClients()) {
+        AsyncWebSocketClient* client = getClientPtr(client_item);
+        if (client && client->status() == WS_CONNECTED) {
+            auto* session = static_cast<ClientSession*>(client->_tempObject);
+            if (session) {
+                client->text(json);
+            }
+        }
+    }
+}
+
+void ChatManager::handleTttMessage(AsyncWebSocketClient* client, const String& message) {
+    auto* session = static_cast<ClientSession*>(client->_tempObject);
+    if (!session) return;
+
+    String targetUid = getJsonValue(message, "to");
+    if (targetUid.length() != 4) return;
+
+    targetUid.toUpperCase();
+
+    // 1. Prüfen, ob der Ziel-User lokal an diesem Node verbunden ist
+    bool foundLocally = false;
+    for (auto&& client_item : _ws.getClients()) {
+        AsyncWebSocketClient* localClient = getClientPtr(client_item);
+        if (localClient && localClient->status() == WS_CONNECTED) {
+            auto* s = static_cast<ClientSession*>(localClient->_tempObject);
+            if (s && s->uid == targetUid) {
+                localClient->text(message);
+                foundLocally = true;
+                break;
+            }
+        }
+    }
+
+#if ENABLE_MESH
+    // 2. Wenn nicht lokal gefunden, via ESP-NOW Mesh broadcasten
+    if (!foundLocally) {
+        sendMeshBroadcast(6, message);
+    }
+#endif
+}
+
 // ==================== LIGHTWEIGHT ESP-NOW MESH BACKHAUL ====================
 #if ENABLE_MESH
 
@@ -486,6 +623,12 @@ void ChatManager::handleIncomingPacket(const MeshPacket& packet) {
             }
         }
     }
+    else if (packet.packetType == 5) { // 5 = USER_PING (Remote online users)
+        handleUserMeshPing(msgPayload);
+    }
+    else if (packet.packetType == 6) { // 6 = TTT_MSG (Tic-Tac-Toe Spielereignis)
+        handleMeshTttMessage(msgPayload);
+    }
 }
 
 void ChatManager::sendMeshBroadcast(uint8_t packetType, const String& msg) {
@@ -531,6 +674,46 @@ void ChatManager::handleSyncResponse(const MeshPacket& packet) {
     if (!exists && msgPayload.length() > 0) {
         targetRoom.add(msgPayload);
         addTickerMessage(msgPayload);
+    }
+}
+
+void ChatManager::handleUserMeshPing(const String& payload) {
+    if (payload.length() == 0) return;
+
+    int start = 0;
+    while (start < (int)payload.length()) {
+        int commaIdx = payload.indexOf(',', start);
+        String uidPart;
+        if (commaIdx == -1) {
+            uidPart = payload.substring(start);
+            start = payload.length();
+        } else {
+            uidPart = payload.substring(start, commaIdx);
+            start = commaIdx + 1;
+        }
+        uidPart.trim();
+        if (uidPart.length() == 4) {
+            addOrUpdateUser(uidPart.c_str(), false); // false = Remote User
+        }
+    }
+}
+
+void ChatManager::handleMeshTttMessage(const String& payload) {
+    String targetUid = getJsonValue(payload, "to");
+    if (targetUid.length() != 4) return;
+
+    targetUid.toUpperCase();
+
+    // Überprüfe, ob der Empfänger lokal an diesem Node verbunden ist
+    for (auto&& client_item : _ws.getClients()) {
+        AsyncWebSocketClient* localClient = getClientPtr(client_item);
+        if (localClient && localClient->status() == WS_CONNECTED) {
+            auto* s = static_cast<ClientSession*>(localClient->_tempObject);
+            if (s && s->uid == targetUid) {
+                localClient->text(payload);
+                break;
+            }
+        }
     }
 }
 

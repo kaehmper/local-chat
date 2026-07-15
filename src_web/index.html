@@ -216,6 +216,216 @@
       background: var(--bg-color);
       border-bottom: 1px solid var(--border-color);
     }
+
+    /* --- Online-Liste Sidebar/Drawer --- */
+    .user-drawer {
+      position: absolute;
+      top: 0;
+      right: -250px;
+      width: 240px;
+      height: 100%;
+      background: var(--card-bg);
+      border-left: 1px solid var(--border-color);
+      box-shadow: -2px 0 5px rgba(0,0,0,0.05);
+      transition: right 0.3s ease;
+      z-index: 15;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .user-drawer.open {
+      right: 0;
+    }
+
+    .drawer-header {
+      padding: 12px 16px;
+      font-weight: 700;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .drawer-close {
+      cursor: pointer;
+      font-size: 20px;
+      color: var(--text-muted);
+    }
+
+    .user-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .user-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: var(--bg-color);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .user-item-name {
+      font-weight: 600;
+    }
+
+    .invite-btn {
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .invite-btn:hover {
+      background: var(--primary-hover);
+    }
+
+    /* Toggle-Button in der Header-Zeile */
+    .toggle-users-btn {
+      background: none;
+      border: 1px solid var(--border-color);
+      color: var(--text-color);
+      padding: 6px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.2s;
+    }
+
+    .toggle-users-btn:hover {
+      background: var(--bg-color);
+    }
+
+    /* --- Tic-Tac-Toe Overlay --- */
+    .ttt-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 20;
+      display: none; /* Mit Flexbox anzeigen bei Bedarf */
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .ttt-card {
+      background: var(--card-bg);
+      border-radius: 18px;
+      width: 100%;
+      max-width: 320px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      animation: zoomIn 0.25s ease-out;
+    }
+
+    @keyframes zoomIn {
+      from { transform: scale(0.9); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .ttt-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--primary-color);
+    }
+
+    .ttt-status {
+      font-size: 14px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    /* Grid-Spielfeld */
+    .ttt-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      width: 180px;
+      height: 180px;
+    }
+
+    .ttt-cell {
+      background: var(--bg-color);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      font-weight: 800;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .ttt-cell:hover {
+      background: var(--border-color);
+    }
+
+    .ttt-cell.x {
+      color: var(--primary-color);
+    }
+
+    .ttt-cell.o {
+      color: #ff4d4f;
+    }
+
+    .ttt-actions {
+      display: flex;
+      gap: 12px;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .ttt-btn {
+      flex: 1;
+      padding: 10px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: background 0.2s;
+    }
+
+    .ttt-btn.confirm {
+      background: var(--primary-color);
+      color: white;
+    }
+
+    .ttt-btn.confirm:hover {
+      background: var(--primary-hover);
+    }
+
+    .ttt-btn.cancel {
+      background: var(--border-color);
+      color: var(--text-color);
+    }
+
+    .ttt-btn.cancel:hover {
+      background: #d4d6db;
+    }
   </style>
 </head>
 <body>
@@ -223,9 +433,12 @@
   <header>
     <div class="brand-container">
       <span class="brand">CardijnChat</span>
-      <div class="connection-status">
-        <span id="status-dot" class="status-dot"></span>
-        <span id="status-text">Verbinde...</span>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <button class="toggle-users-btn" onclick="toggleUserDrawer()" aria-label="Online-Liste anzeigen">👥 <span style="display: inline-block;">Online</span></button>
+        <div class="connection-status">
+          <span id="status-dot" class="status-dot"></span>
+          <span id="status-text">Verbinde...</span>
+        </div>
       </div>
     </div>
   </header>
@@ -236,6 +449,24 @@
 
   <main>
     <div id="chat-container" class="chat-container"></div>
+
+    <!-- Online-Liste Drawer -->
+    <div id="user-drawer" class="user-drawer">
+      <div class="drawer-header">
+        <span>Online-Nutzer</span>
+        <span class="drawer-close" onclick="toggleUserDrawer()">&times;</span>
+      </div>
+      <ul id="user-list" class="user-list">
+        <!-- Dynamisch befüllt -->
+      </ul>
+    </div>
+
+    <!-- Tic-Tac-Toe Minigame Overlay -->
+    <div id="ttt-overlay" class="ttt-overlay">
+      <div id="ttt-card" class="ttt-card">
+        <!-- Dynamisch befüllt per JS (Einladung, Board oder Resultat) -->
+      </div>
+    </div>
 
     <div class="input-area">
       <input type="text" id="msg-input" class="message-input" placeholder="Nachricht schreiben..." maxlength="200" onkeydown="if(event.key === 'Enter') sendMsg()">
@@ -289,6 +520,12 @@
           else if (data.type === 'msg') {
             appendMessage(data.msg);
           }
+          else if (data.type === 'users') {
+            updateUserList(data.list || []);
+          }
+          else if (data.type === 'ttt') {
+            handleTttEvent(data);
+          }
         } catch (e) {
           console.error("Fehler beim Verarbeiten der WebSocket-Nachricht:", e);
         }
@@ -341,8 +578,12 @@
 
     // Helper to safely unescape common HTML entities that were escaped by the server
     function unescapeHtml(escapedStr) {
-      const doc = new DOMParser().parseFromString(escapedStr, 'text/html');
-      return doc.documentElement.textContent || '';
+      return escapedStr
+        .replace(/&quot;/g, '"')
+        .replace(/&#x27;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
     }
 
     function appendMessage(msgStr, scroll = true) {
@@ -361,7 +602,11 @@
 
       const metaSpan = document.createElement('span');
       metaSpan.className = 'msg-meta';
-      metaSpan.innerText = isSelf ? `Du (${uid})` : (uid ? `Nutzer ${uid}` : 'System');
+
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const metaText = isSelf ? `Du (${uid}) • ${timeStr}` : (uid ? `Nutzer ${uid} • ${timeStr}` : `System • ${timeStr}`);
+      metaSpan.innerText = metaText;
       msgDiv.appendChild(metaSpan);
 
       const textSpan = document.createElement('span');
@@ -381,10 +626,310 @@
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
+    // --- Online-Liste & Tic-Tac-Toe Minigame Logik ---
+    const userDrawer = document.getElementById('user-drawer');
+    const userList = document.getElementById('user-list');
+    const tttOverlay = document.getElementById('ttt-overlay');
+    const tttCard = document.getElementById('ttt-card');
+
+    let tttGameState = {
+      active: false,
+      pending: false,
+      board: [0,0,0,0,0,0,0,0,0], // 0 = leer, 1 = X, 2 = O
+      mySymbol: '', // 'X' oder 'O'
+      opponentUid: '',
+      myTurn: false
+    };
+
+    const winningCombos = [
+      [0,1,2], [3,4,5], [6,7,8], // Zeilen
+      [0,3,6], [1,4,7], [2,5,8], // Spalten
+      [0,4,8], [2,4,6]           // Diagonalen
+    ];
+
+    function toggleUserDrawer() {
+      userDrawer.classList.toggle('open');
+    }
+
+    function updateUserList(list) {
+      userList.innerHTML = '';
+
+      // Sortiere UIDs alphabetisch, eigene UID nach oben
+      const sortedList = [...new Set(list)].sort((a, b) => {
+        if (a === myUid) return -1;
+        if (b === myUid) return 1;
+        return a.localeCompare(b);
+      });
+
+      sortedList.forEach(uid => {
+        const li = document.createElement('li');
+        li.className = 'user-item';
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'user-item-name';
+        nameSpan.textContent = uid === myUid ? `Du (${uid})` : `Nutzer ${uid}`;
+        li.appendChild(nameSpan);
+
+        if (uid !== myUid) {
+          const btn = document.createElement('button');
+          btn.className = 'invite-btn';
+          btn.textContent = 'Spielen';
+          btn.onclick = () => invitePlayer(uid);
+          li.appendChild(btn);
+        }
+
+        userList.appendChild(li);
+      });
+    }
+
+    function sendTttMessage(to, cmd, extra = {}) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'ttt',
+          from: myUid,
+          to: to,
+          cmd: cmd,
+          ...extra
+        }));
+      }
+    }
+
+    function invitePlayer(opponentUid) {
+      if (tttGameState.active || tttGameState.pending) {
+        alert('Du bist bereits in einem Spiel oder einer Einladung.');
+        return;
+      }
+
+      tttGameState.pending = true;
+      tttGameState.opponentUid = opponentUid;
+
+      // Einladungs-Status-Overlay anzeigen
+      tttOverlay.style.display = 'flex';
+      renderTttPendingInviteScreen();
+
+      // Einladungs-Paket senden
+      sendTttMessage(opponentUid, 'invite');
+    }
+
+    function handleTttEvent(data) {
+      const from = data.from;
+      const cmd = data.cmd;
+
+      if (cmd === 'invite') {
+        // Wenn wir bereits spielen oder einladen, sind wir "busy"
+        if (tttGameState.active || tttGameState.pending) {
+          sendTttMessage(from, 'busy');
+          return;
+        }
+
+        tttGameState.pending = true;
+        tttGameState.opponentUid = from;
+
+        // Einladungs-Annahme-Overlay anzeigen
+        tttOverlay.style.display = 'flex';
+        renderTttAcceptInviteScreen(from);
+      }
+      else if (cmd === 'decline') {
+        if (tttGameState.pending && tttGameState.opponentUid === from) {
+          alert(`Nutzer ${from} hat deine Einladung abgelehnt.`);
+          resetTttState();
+        }
+      }
+      else if (cmd === 'busy') {
+        if (tttGameState.pending && tttGameState.opponentUid === from) {
+          alert(`Nutzer ${from} ist gerade beschäftigt.`);
+          resetTttState();
+        }
+      }
+      else if (cmd === 'accept') {
+        if (tttGameState.pending && tttGameState.opponentUid === from) {
+          // Spiel startet! Der Einladende ist immer X und geht als Erstes!
+          tttGameState.active = true;
+          tttGameState.pending = false;
+          tttGameState.board = [0,0,0,0,0,0,0,0,0];
+          tttGameState.mySymbol = 'X';
+          tttGameState.myTurn = true;
+
+          renderTttBoardScreen();
+        }
+      }
+      else if (cmd === 'move') {
+        if (tttGameState.active && tttGameState.opponentUid === from) {
+          const cellIdx = data.cell;
+          const opponentSymbolVal = tttGameState.mySymbol === 'X' ? 2 : 1;
+
+          tttGameState.board[cellIdx] = opponentSymbolVal;
+          tttGameState.myTurn = true;
+
+          // Gewinn-Prüfung nach gegnerischem Zug
+          const winner = checkWinner(tttGameState.board);
+          if (winner) {
+            renderTttEndScreen(winner);
+          } else {
+            renderTttBoardScreen();
+          }
+        }
+      }
+      else if (cmd === 'quit') {
+        if ((tttGameState.active || tttGameState.pending) && tttGameState.opponentUid === from) {
+          alert(`Nutzer ${from} hat das Spiel verlassen.`);
+          resetTttState();
+        }
+      }
+    }
+
+    function resetTttState() {
+      tttGameState = {
+        active: false,
+        pending: false,
+        board: [0,0,0,0,0,0,0,0,0],
+        mySymbol: '',
+        opponentUid: '',
+        myTurn: false
+      };
+      tttOverlay.style.display = 'none';
+      tttCard.innerHTML = '';
+    }
+
+    function acceptInvite() {
+      if (tttGameState.pending) {
+        const opp = tttGameState.opponentUid;
+        tttGameState.active = true;
+        tttGameState.pending = false;
+        tttGameState.board = [0,0,0,0,0,0,0,0,0];
+        tttGameState.mySymbol = 'O'; // Der Angenommene ist O
+        tttGameState.myTurn = false; // X fängt an
+
+        sendTttMessage(opp, 'accept');
+        renderTttBoardScreen();
+      }
+    }
+
+    function declineInvite() {
+      if (tttGameState.pending) {
+        sendTttMessage(tttGameState.opponentUid, 'decline');
+        resetTttState();
+      }
+    }
+
+    function quitGame() {
+      if (tttGameState.active || tttGameState.pending) {
+        sendTttMessage(tttGameState.opponentUid, 'quit');
+      }
+      resetTttState();
+    }
+
+    function makeMove(cellIdx) {
+      if (!tttGameState.active || !tttGameState.myTurn) return;
+      if (tttGameState.board[cellIdx] !== 0) return; // Zelle belegt
+
+      const myVal = tttGameState.mySymbol === 'X' ? 1 : 2;
+      tttGameState.board[cellIdx] = myVal;
+      tttGameState.myTurn = false;
+
+      // Sende Spielzug an Gegner
+      sendTttMessage(tttGameState.opponentUid, 'move', { cell: cellIdx });
+
+      // Gewinn-Prüfung
+      const winner = checkWinner(tttGameState.board);
+      if (winner) {
+        renderTttEndScreen(winner);
+      } else {
+        renderTttBoardScreen();
+      }
+    }
+
+    function checkWinner(board) {
+      for (let combo of winningCombos) {
+        const [a, b, c] = combo;
+        if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+          return board[a]; // 1 für X, 2 für O
+        }
+      }
+      if (board.every(cell => cell !== 0)) {
+        return 'draw'; // Unentschieden
+      }
+      return null;
+    }
+
+    // --- Render-Helfer für Tic-Tac-Toe Screens ---
+
+    function renderTttPendingInviteScreen() {
+      tttCard.innerHTML = `
+        <span class="ttt-title">Spieleinladung</span>
+        <div class="ttt-status">Warte auf Antwort von Nutzer <b>${tttGameState.opponentUid}</b>...</div>
+        <button class="ttt-btn cancel" onclick="quitGame()">Abbrechen</button>
+      `;
+    }
+
+    function renderTttAcceptInviteScreen(from) {
+      tttCard.innerHTML = `
+        <span class="ttt-title">Herausforderung!</span>
+        <div class="ttt-status">Nutzer <b>${from}</b> lädt dich zu einer Partie Tic-Tac-Toe ein!</div>
+        <div class="ttt-actions">
+          <button class="ttt-btn confirm" onclick="acceptInvite()">Annehmen</button>
+          <button class="ttt-btn cancel" onclick="declineInvite()">Ablehnen</button>
+        </div>
+      `;
+    }
+
+    function renderTttBoardScreen() {
+      const turnText = tttGameState.myTurn ? '<b>Du bist dran!</b>' : `Warte auf Gegner (${tttGameState.opponentUid})...`;
+
+      let gridHtml = '<div class="ttt-grid">';
+      for (let i = 0; i < 9; ++i) {
+        const val = tttGameState.board[i];
+        let cellChar = '';
+        let cellClass = '';
+        if (val === 1) { cellChar = 'X'; cellClass = 'x'; }
+        else if (val === 2) { cellChar = 'O'; cellClass = 'o'; }
+
+        gridHtml += `<div class="ttt-cell ${cellClass}" onclick="makeMove(${i})">${cellChar}</div>`;
+      }
+      gridHtml += '</div>';
+
+      tttCard.innerHTML = `
+        <span class="ttt-title">Tic-Tac-Toe</span>
+        <div class="ttt-status">Du spielst gegen <b>${tttGameState.opponentUid}</b> (Symbol: <b>${tttGameState.mySymbol}</b>)</div>
+        <div class="ttt-status">${turnText}</div>
+        ${gridHtml}
+        <button class="ttt-btn cancel" onclick="quitGame()">Aufgeben</button>
+      `;
+    }
+
+    function renderTttEndScreen(result) {
+      let resultText = '';
+      if (result === 'draw') {
+        resultText = 'Unentschieden!';
+      } else {
+        const myVal = tttGameState.mySymbol === 'X' ? 1 : 2;
+        resultText = result === myVal ? '🏆 Glückwunsch! Du hast gewonnen!' : 'Schade! Du hast verloren.';
+      }
+
+      let gridHtml = '<div class="ttt-grid" style="pointer-events: none; opacity: 0.75;">';
+      for (let i = 0; i < 9; ++i) {
+        const val = tttGameState.board[i];
+        let cellChar = '';
+        let cellClass = '';
+        if (val === 1) { cellChar = 'X'; cellClass = 'x'; }
+        else if (val === 2) { cellChar = 'O'; cellClass = 'o'; }
+
+        gridHtml += `<div class="ttt-cell ${cellClass}">${cellChar}</div>`;
+      }
+      gridHtml += '</div>';
+
+      tttCard.innerHTML = `
+        <span class="ttt-title">Spiel beendet</span>
+        <div class="ttt-status" style="font-weight: 700; font-size: 16px; color: var(--primary-color);">${resultText}</div>
+        ${gridHtml}
+        <button class="ttt-btn confirm" onclick="resetTttState()">Schließen</button>
+      `;
+    }
+
     window.onload = () => {
       connectWS();
       document.body.addEventListener('touchmove', (e) => {
-        if (e.target.closest('#chat-container')) return;
+        if (e.target.closest('#chat-container') || e.target.closest('#user-drawer')) return;
         e.preventDefault();
       }, { passive: false });
     };
