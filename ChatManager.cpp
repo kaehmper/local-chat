@@ -46,6 +46,9 @@ ChatManager::ChatManager()
 #if ENABLE_MESH
     _nodeId = 0;
     _lastPingTime = 0;
+    _syncInProgress = false;
+    _syncNextIndex = 0;
+    _lastSyncMsgTime = 0;
 #endif
 }
 
@@ -72,6 +75,23 @@ void ChatManager::cleanup() {
     if (now - _lastPingTime > 60000) { // Alle 60 Sekunden periodischer Sync-Request
         _lastPingTime = now;
         sendMeshBroadcast(2, ""); // SYNC_REQ senden
+    }
+
+    // Wenn eine Verlaufsübertragung (Sync-Request) ansteht, wickeln wir sie häppchenweise non-blocking hier ab
+    if (_syncInProgress) {
+        if (now - _lastSyncMsgTime >= 15) { // 15ms non-blocking delay zwischen Nachrichten
+            _lastSyncMsgTime = now;
+            size_t openCount = _openRoom.size();
+            if (_syncNextIndex < openCount) {
+                sendMeshBroadcast(3, _openRoom.get(_syncNextIndex)); // Type 3 (SYNC_MSG)
+                _syncNextIndex++;
+            } else {
+                // Alle Nachrichten übertragen. Sende Sync-Ende
+                sendMeshBroadcast(4, ""); // Type 4: SYNC_END
+                _syncInProgress = false;
+                Serial.println("[ESP-NOW] Verlaufs-Übertragung abgeschlossen.");
+            }
+        }
     }
 #endif
 }
@@ -268,6 +288,24 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
     }
 }
 
+static String escapeJsonStringValue(const String& val) {
+    String escaped;
+    escaped.reserve(val.length() + 8);
+    for (char c : val) {
+        switch (c) {
+            case '\\': escaped += "\\\\"; break;
+            case '"':  escaped += "\\\""; break;
+            case '\n': escaped += "\\n";  break;
+            case '\r': escaped += "\\r";  break;
+            case '\t': escaped += "\\t";  break;
+            case '\b': escaped += "\\b";  break;
+            case '\f': escaped += "\\f";  break;
+            default:   escaped += c;      break;
+        }
+    }
+    return escaped;
+}
+
 void ChatManager::sendRoomInit(AsyncWebSocketClient* client) {
     auto* session = static_cast<ClientSession*>(client->_tempObject);
     if (!session) return;
@@ -289,11 +327,7 @@ void ChatManager::sendRoomInit(AsyncWebSocketClient* client) {
     json += "\"messages\":[";
 
     for (size_t i = 0; i < count; ++i) {
-        String escaped = buffer.get(i);
-        escaped.replace("\\", "\\\\");
-        escaped.replace("\"", "\\\"");
-
-        json += "\"" + escaped + "\"";
+        json += "\"" + escapeJsonStringValue(buffer.get(i)) + "\"";
         if (i < count - 1) {
             json += ",";
         }
@@ -308,12 +342,10 @@ static inline AsyncWebSocketClient* getClientPtr(AsyncWebSocketClient* p) { retu
 static inline AsyncWebSocketClient* getClientPtr(AsyncWebSocketClient& r) { return &r; }
 
 void ChatManager::broadcastMessage(const String& msg) {
-    String escapedMsg = msg;
-    escapedMsg.replace("\\", "\\\\");
-    escapedMsg.replace("\"", "\\\"");
+    String escapedMsg = escapeJsonStringValue(msg);
 
     String json;
-    json.reserve(64 + msg.length());
+    json.reserve(64 + escapedMsg.length());
     json += "{\"type\":\"msg\",\"msg\":\"" + escapedMsg + "\"}";
 
     for (auto&& client_item : _ws.getClients()) {
@@ -376,7 +408,12 @@ void ChatManager::handleIncomingPacket(const MeshPacket& packet) {
 
     _lastActivity = millis(); // System-Aktivität registrieren
 
-    String msgPayload = String(packet.message);
+    // Sicherstellen, dass das empfangene Nachrichtenfeld im Stack-Objekt nullterminiert ist (Verhinderung von Buffer Over-reads)
+    char safeMessage[sizeof(packet.message)];
+    std::memcpy(safeMessage, packet.message, sizeof(packet.message));
+    safeMessage[sizeof(packet.message) - 1] = '\0';
+
+    String msgPayload = String(safeMessage);
 
     if (packet.packetType == 1) { // 1 = CHAT_MSG (Echtzeit-Nachricht)
         MessageRingBuffer& targetRoom = _openRoom;
@@ -431,21 +468,21 @@ void ChatManager::sendMeshBroadcast(uint8_t packetType, const String& msg) {
 }
 
 void ChatManager::handleSyncRequest(uint32_t targetNodeId) {
-    Serial.println("[ESP-NOW] Verlaufs-Anforderung von Node " + String(targetNodeId) + " empfangen.");
+    Serial.println("[ESP-NOW] Verlaufs-Anforderung von Node " + String(targetNodeId) + " empfangen. Starte non-blocking Sync...");
 
-    // Segmentierte, häppchenweise Übertragung, um den Heap absolut stabil zu halten
-    size_t openCount = _openRoom.size();
-    for (size_t i = 0; i < openCount; ++i) {
-        sendMeshBroadcast(3, _openRoom.get(i)); // Type 3 (SYNC_MSG)
-        delay(15); // Kurze non-blocking Atempause für den Network Stack
-    }
-
-    // Sync beendet signalisieren
-    sendMeshBroadcast(4, ""); // Type 4: SYNC_END
+    // Initiieren der non-blocking segmentierten Übertragung im main loop (cleanup)
+    _syncInProgress = true;
+    _syncNextIndex = 0;
+    _lastSyncMsgTime = millis();
 }
 
 void ChatManager::handleSyncResponse(const MeshPacket& packet) {
-    String msgPayload = String(packet.message);
+    // Sicherstellen, dass das empfangene Nachrichtenfeld im Stack-Objekt nullterminiert ist (Verhinderung von Buffer Over-reads)
+    char safeMessage[sizeof(packet.message)];
+    std::memcpy(safeMessage, packet.message, sizeof(packet.message));
+    safeMessage[sizeof(packet.message) - 1] = '\0';
+
+    String msgPayload = String(safeMessage);
     MessageRingBuffer& targetRoom = _openRoom;
 
     // Dubletten-Prüfung vor dem Einfügen

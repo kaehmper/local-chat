@@ -1,0 +1,10 @@
+127.0.0.1 - - [15/Jul/2026 07:30:35] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [15/Jul/2026 07:30:35] code 404, message File not found
+127.0.0.1 - - [15/Jul/2026 07:30:35] "GET /ws HTTP/1.1" 404 -
+127.0.0.1 - - [15/Jul/2026 07:30:37] code 404, message File not found
+127.0.0.1 - - [15/Jul/2026 07:30:37] "GET /ws HTTP/1.1" 404 -
+127.0.0.1 - - [15/Jul/2026 07:31:16] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [15/Jul/2026 07:31:16] code 404, message File not found
+127.0.0.1 - - [15/Jul/2026 07:31:16] "GET /ws HTTP/1.1" 404 -
+127.0.0.1 - - [15/Jul/2026 07:31:18] code 404, message File not found
+127.0.0.1 - - [15/Jul/2026 07:31:18] "GET /ws HTTP/1.1" 404 -
