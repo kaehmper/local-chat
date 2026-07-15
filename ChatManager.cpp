@@ -42,7 +42,7 @@ const char* MessageRingBuffer::get(size_t index) const {
 // ==================== ChatManager ====================
 
 ChatManager::ChatManager()
-    : _ws("/ws"), _lastActivity(0) {
+    : _ws("/ws"), _lastActivity(0), _tickerCount(0) {
 #if ENABLE_MESH
     _nodeId = 0;
     _lastPingTime = 0;
@@ -278,6 +278,7 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
         if (cleanText.length() > 0) {
             String formattedMsg = "[" + session->uid + "] " + cleanText;
             _openRoom.add(formattedMsg);
+            addTickerMessage(formattedMsg);
             broadcastMessage(formattedMsg);
 
 #if ENABLE_MESH
@@ -364,6 +365,37 @@ void ChatManager::broadcastMessage(const String& msg) {
     }
 }
 
+void ChatManager::addTickerMessage(const String& msg) {
+    if (msg.length() == 0) return;
+
+    // Dubletten-Prüfung innerhalb des Ticker-Puffers, um redundante Einträge zu vermeiden
+    for (size_t i = 0; i < _tickerCount; ++i) {
+        if (_tickerMessages[i].equals(msg)) {
+            // Falls das Element bereits existiert, verschieben wir es an die Spitze (Index 0)
+            // und rücken die davor liegenden Elemente entsprechend nach hinten
+            for (size_t j = i; j > 0; --j) {
+                _tickerMessages[j] = _tickerMessages[j - 1];
+            }
+            _tickerMessages[0] = msg;
+            return;
+        }
+    }
+
+    // Wenn es neu ist, schieben wir alle Elemente um 1 Position nach hinten
+    _tickerMessages[2] = _tickerMessages[1];
+    _tickerMessages[1] = _tickerMessages[0];
+    _tickerMessages[0] = msg;
+
+    if (_tickerCount < 3) {
+        _tickerCount++;
+    }
+}
+
+String ChatManager::getLastTickerMessage(size_t index) const {
+    if (index >= _tickerCount) return "";
+    return _tickerMessages[index];
+}
+
 // ==================== LIGHTWEIGHT ESP-NOW MESH BACKHAUL ====================
 #if ENABLE_MESH
 
@@ -430,6 +462,7 @@ void ChatManager::handleIncomingPacket(const MeshPacket& packet) {
 
         if (!exists && msgPayload.length() > 0) {
             targetRoom.add(msgPayload);
+            addTickerMessage(msgPayload);
             // Lokal an alle WebSocket-Clients senden
             broadcastMessage(msgPayload);
         }
@@ -497,6 +530,7 @@ void ChatManager::handleSyncResponse(const MeshPacket& packet) {
 
     if (!exists && msgPayload.length() > 0) {
         targetRoom.add(msgPayload);
+        addTickerMessage(msgPayload);
     }
 }
 

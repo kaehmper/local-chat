@@ -14,11 +14,15 @@
 #include "WebAssets.h"
 #include "DNSServer.h"
 #include "ChatManager.h"
+#include "SSD1306.h"
 
 // ---------- Globale Instanzen ----------
 AsyncWebServer server(Config::HTTP_PORT);
 CustomDNSServer dnsServer;
 ChatManager chatManager;
+
+// SSD1306 OLED Instanz
+SSD1306 oled(Config::OLED_I2C_ADDR, Config::OLED_SDA, Config::OLED_SCL);
 
 IPAddress apIP(10, 10, 10, 1);
 IPAddress subnet(255, 255, 255, 0);
@@ -64,6 +68,98 @@ void handleServeIndex(AsyncWebServerRequest *request) {
     request->send(response);
 }
 
+// ---------- OLED Ticker- & Screensaver-Steuerung ----------
+unsigned long lastOledTick = 0;
+size_t currentTickerIndex = 0;
+bool oledScreensaverActive = false;
+int ssCol = 0;
+int ssPage = 0;
+
+void drawHeader() {
+    oled.setCursor(0, 0);
+    oled.print("=== [CardijnChat] ===");
+}
+
+void updateOLEDDisplay(unsigned long now) {
+    if (!Config::ENABLE_OLED) return;
+
+    // Aktivitäts-Status prüfen (Inaktivität nach Config::ACTIVITY_DURATION führt zu Screensaver)
+    bool active = (now - chatManager.getLastActivityTime()) < Config::ACTIVITY_DURATION;
+
+    if (!active) {
+        // Screensaver-Modus zur Vermeidung von Einbrenneffekten
+        if (!oledScreensaverActive || (now - lastOledTick >= 5000)) {
+            lastOledTick = now;
+            oledScreensaverActive = true;
+            oled.clear();
+
+            // Bewege die Position des Textes zufällig / versetzt
+            ssCol = (ssCol + 15) % 45; // Max. Spalte, damit Text noch auf Bildschirm passt
+            ssPage = (ssPage + 1) % 6;  // Max. Page, damit zweizeiliger Text passt
+
+            oled.setCursor(ssCol, ssPage);
+            oled.print("zZz CardijnChat");
+            oled.setCursor(ssCol, ssPage + 1);
+            oled.print("  10.10.10.1");
+        }
+        return;
+    }
+
+    // Wenn Aktivität erkannt wurde, aber der Screensaver noch aktiv war
+    if (oledScreensaverActive) {
+        oledScreensaverActive = false;
+        oled.clear();
+        lastOledTick = 0; // Sofortiges Neuzeichnen triggern
+    }
+
+    size_t tickerMsgCount = chatManager.getTickerMessageCount();
+
+    if (tickerMsgCount == 0) {
+        // Standby/Boot-Bildschirm bei fehlenden Nachrichten
+        if (now - lastOledTick >= 5000 || lastOledTick == 0) {
+            lastOledTick = now;
+            oled.clear();
+            drawHeader();
+
+            oled.setCursor(0, 2);
+            oled.print("AP:  ");
+            oled.print(Config::CHATNAME);
+
+            oled.setCursor(0, 4);
+            oled.print("IP:  10.10.10.1");
+
+            oled.setCursor(0, 6);
+            oled.print("Warte auf Chat...");
+        }
+    } else {
+        // Ticker-Rotation (alle 5 Sekunden die nächste Nachricht anzeigen)
+        if (now - lastOledTick >= 5000 || lastOledTick == 0) {
+            lastOledTick = now;
+            oled.clear();
+            drawHeader();
+
+            if (currentTickerIndex >= tickerMsgCount) {
+                currentTickerIndex = 0;
+            }
+
+            // Status-Zeile des Newstickers
+            oled.setCursor(0, 1);
+            oled.print("Ticker (");
+            oled.print(String(currentTickerIndex + 1).c_str());
+            oled.print("/");
+            oled.print(String(tickerMsgCount).c_str());
+            oled.print("):");
+
+            // Die Nachricht holen und zeilenweise ab Zeile 3 rendern
+            String msg = chatManager.getLastTickerMessage(currentTickerIndex);
+            oled.printWrapped(msg, 3, 5);
+
+            // Rotations-Index inkrementieren
+            currentTickerIndex = (currentTickerIndex + 1) % tickerMsgCount;
+        }
+    }
+}
+
 // ==================== SETUP ====================
 void setup() {
     // Serieller Monitor für Debug-Ausgaben initialisieren
@@ -74,6 +170,16 @@ void setup() {
 
     // Initialisierung des Hardware-Zufallszahlengenerators
     randomSeed(analogRead(0));
+
+    // OLED-Display-Schnittstelle initialisieren
+    if (Config::ENABLE_OLED) {
+        Serial.println("Initialisiere SSD1306 OLED-Display...");
+        if (oled.begin()) {
+            Serial.println("OLED-Display erfolgreich gestartet!");
+        } else {
+            Serial.println("OLED-Display konnte nicht initialisiert werden!");
+        }
+    }
 
     // Aktivitäts-LED konfigurieren
     pinMode(Config::ACTIVITY_LED, OUTPUT);
@@ -142,8 +248,11 @@ void loop() {
     // WebSocket-Ressourcen regelmäßig aufräumen
     chatManager.cleanup();
 
-    // LED Takt- und Aktivitätsanzeige
+    // OLED-Display und Newsticker-Rotation aktualisieren
     unsigned long currentMillis = millis();
+    updateOLEDDisplay(currentMillis);
+
+    // LED Takt- und Aktivitätsanzeige
     if (currentMillis - lastTick >= Config::TICK_INTERVAL) {
         lastTick = currentMillis;
 

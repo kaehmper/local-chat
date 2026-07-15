@@ -33,4 +33,10 @@ constexpr bool ACTIVITY_REVERSE  = true;                    ///< true, wenn die 
 constexpr uint32_t ACTIVITY_DURATION = 60000;               ///< Inaktivitäts-Timeout in ms (60 Sekunden)
 constexpr uint32_t TICK_INTERVAL     = 1000;                ///< Takt-Intervall für die LED-Steuerung in ms
 
+// ---------- OLED-Display (SSD1306) ----------
+constexpr bool ENABLE_OLED       = true;                    ///< Setzen Sie dies auf false, um das Display zu deaktivieren
+constexpr uint8_t OLED_SDA       = 4;                       ///< GPIO für SDA (standardmäßig GPIO 4 / D2)
+constexpr uint8_t OLED_SCL       = 5;                       ///< GPIO für SCL (standardmäßig GPIO 5 / D1)
+constexpr uint8_t OLED_I2C_ADDR  = 0x3C;                    ///< 7-Bit I2C-Adresse (entspricht 8-Bit-Schreibadresse 0x78)
+
 } // namespace Config

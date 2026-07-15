@@ -76,6 +76,21 @@ public:
     uint32_t getLastActivityTime() const { return _lastActivity; }
 
     /**
+     * @brief Ruft eine der letzten drei eindeutigen Nachrichten ab (0 = neueste, 1 = zweitneueste, 2 = drittneueste).
+     */
+    String getLastTickerMessage(size_t index) const;
+
+    /**
+     * @brief Gibt die Anzahl der aktuell im Ticker-Puffer gespeicherten Nachrichten zurück (0 bis 3).
+     */
+    size_t getTickerMessageCount() const { return _tickerCount; }
+
+    /**
+     * @brief Fügt eine Nachricht dem Ticker-Puffer hinzu.
+     */
+    void addTickerMessage(const String& msg);
+
+    /**
      * @brief Setzt den Inaktivitäts-Zeitstempel zurück (registriert Aktivität).
      */
     void registerActivity() { _lastActivity = millis(); }
@@ -94,6 +109,10 @@ private:
 
     // Zeitstempel der letzten Nutzeraktivität
     uint32_t _lastActivity;
+
+    // Ticker-Puffer für die letzten drei eindeutigen Nachrichten
+    String _tickerMessages[3];
+    size_t _tickerCount;
 
     // Generiert eine sichere 4-stellige Hex-ID mithilfe des Hardware-RNG des ESP8266
     String generateSessionId();
