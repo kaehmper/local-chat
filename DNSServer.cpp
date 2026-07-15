@@ -46,25 +46,37 @@ void CustomDNSServer::process() {
 
     // Robustes Parsen des QNAME-Teils, um QTYPE und QCLASS zu bestimmen
     size_t qname_offset = 12;
+    bool ended = false;
     while (qname_offset < static_cast<size_t>(bytesRead)) {
         uint8_t len = packet[qname_offset];
         if (len == 0) {
+            ended = true;
             break; // Ende des QNAME
         }
         if ((len & 0xC0) == 0xC0) {
-            // Kompressions-Pointer
+            // Kompressions-Pointer (2 Bytes lang)
+            if (qname_offset + 1 >= static_cast<size_t>(bytesRead)) {
+                return; // Ungültiges Paket (abgebrochener Kompressions-Pointer)
+            }
             qname_offset += 2;
+            ended = true;
             break;
         } else {
+            // Label-Länge prüfen, um Überlauf zu verhindern
+            if (qname_offset + 1 + len > static_cast<size_t>(bytesRead)) {
+                return; // Ungültiges/Malformiertes Paket
+            }
             qname_offset += 1 + len;
         }
     }
 
-    if (qname_offset >= static_cast<size_t>(bytesRead) || packet[qname_offset] != 0) {
-        return; // Ungültiger QNAME
+    if (!ended || qname_offset >= static_cast<size_t>(bytesRead)) {
+        return; // Ungültiger QNAME oder Out-of-bounds
     }
 
-    qname_offset++; // Null-Byte überspringen
+    if (packet[qname_offset] == 0) {
+        qname_offset++; // Null-Byte überspringen, falls wir an einem Null-Byte gestoppt haben
+    }
 
     if (qname_offset + 4 > static_cast<size_t>(bytesRead)) {
         return; // Unvollständige Frage

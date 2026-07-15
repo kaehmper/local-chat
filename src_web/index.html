@@ -339,6 +339,12 @@
       scrollToBottom();
     }
 
+    // Helper to safely unescape common HTML entities that were escaped by the server
+    function unescapeHtml(escapedStr) {
+      const doc = new DOMParser().parseFromString(escapedStr, 'text/html');
+      return doc.documentElement.textContent || '';
+    }
+
     function appendMessage(msgStr, scroll = true) {
       let uid = '';
       let text = msgStr;
@@ -359,7 +365,9 @@
       msgDiv.appendChild(metaSpan);
 
       const textSpan = document.createElement('span');
-      textSpan.innerHTML = text;
+      // Unescape HTML entities from the server representation to show correct characters,
+      // but assign via textContent to strictly prevent any HTML injection or XSS execution!
+      textSpan.textContent = unescapeHtml(text);
       msgDiv.appendChild(textSpan);
 
       chatContainer.appendChild(msgDiv);

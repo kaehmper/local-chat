@@ -123,6 +123,11 @@ private:
     uint32_t _nodeId;
     uint32_t _lastPingTime;
 
+    // Non-blocking Defer-Schnittstelle für Verlaufs-Synchronisierung
+    bool _syncInProgress;
+    size_t _syncNextIndex;
+    uint32_t _lastSyncMsgTime;
+
     void initMesh();
     void sendMeshBroadcast(uint8_t packetType, const String& msg);
     void handleIncomingPacket(const MeshPacket& packet);
