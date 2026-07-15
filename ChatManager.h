@@ -152,5 +152,7 @@ private:
     void handleIncomingPacket(const MeshPacket& packet);
     void handleSyncRequest(uint32_t targetNodeId);
     void handleSyncResponse(const MeshPacket& packet);
+    void handleUserMeshPing(const String& payload);
+    void handleMeshTttMessage(const String& payload);
 #endif
 };

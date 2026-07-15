@@ -486,6 +486,12 @@ void ChatManager::handleIncomingPacket(const MeshPacket& packet) {
             }
         }
     }
+    else if (packet.packetType == 5) { // 5 = USER_PING (Remote online users)
+        handleUserMeshPing(msgPayload);
+    }
+    else if (packet.packetType == 6) { // 6 = TTT_MSG (Tic-Tac-Toe Spielereignis)
+        handleMeshTttMessage(msgPayload);
+    }
 }
 
 void ChatManager::sendMeshBroadcast(uint8_t packetType, const String& msg) {
@@ -531,6 +537,46 @@ void ChatManager::handleSyncResponse(const MeshPacket& packet) {
     if (!exists && msgPayload.length() > 0) {
         targetRoom.add(msgPayload);
         addTickerMessage(msgPayload);
+    }
+}
+
+void ChatManager::handleUserMeshPing(const String& payload) {
+    if (payload.length() == 0) return;
+
+    int start = 0;
+    while (start < (int)payload.length()) {
+        int commaIdx = payload.indexOf(',', start);
+        String uidPart;
+        if (commaIdx == -1) {
+            uidPart = payload.substring(start);
+            start = payload.length();
+        } else {
+            uidPart = payload.substring(start, commaIdx);
+            start = commaIdx + 1;
+        }
+        uidPart.trim();
+        if (uidPart.length() == 4) {
+            addOrUpdateUser(uidPart.c_str(), false); // false = Remote User
+        }
+    }
+}
+
+void ChatManager::handleMeshTttMessage(const String& payload) {
+    String targetUid = getJsonValue(payload, "to");
+    if (targetUid.length() != 4) return;
+
+    targetUid.toUpperCase();
+
+    // Überprüfe, ob der Empfänger lokal an diesem Node verbunden ist
+    for (auto&& client_item : _ws.getClients()) {
+        AsyncWebSocketClient* localClient = getClientPtr(client_item);
+        if (localClient && localClient->status() == WS_CONNECTED) {
+            auto* s = static_cast<ClientSession*>(localClient->_tempObject);
+            if (s && s->uid == targetUid) {
+                localClient->text(payload);
+                break;
+            }
+        }
     }
 }
 
