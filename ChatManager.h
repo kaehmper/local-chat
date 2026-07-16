@@ -51,6 +51,16 @@ private:
 };
 
 /**
+ * @struct OnlineUser
+ * @brief Struktur zur Speicherung von Informationen über online befindliche Benutzer im Mesh.
+ */
+struct OnlineUser {
+    char uid[5];        // 4-stellige Hex-ID + Nullterminierung
+    uint32_t lastSeen;  // Zeitstempel der letzten Aktivität
+    bool isLocal;       // Gibt an, ob der Benutzer lokal verbunden ist (true) oder über Mesh (false)
+};
+
+/**
  * @class ChatManager
  * @brief Verwaltet die Chat-Räume, WebSockets, Sitzungen und Authentifizierung.
  */
