@@ -199,6 +199,12 @@ void ChatManager::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client
         case WS_EVT_DATA: {
             AwsFrameInfo* info = static_cast<AwsFrameInfo*>(arg);
             if (info->opcode == WS_TEXT) {
+                // DoS/Heap Exhaustion prevention: Reject messages longer than 2048 bytes
+                if (info->len > 2048) {
+                    client->close();
+                    break;
+                }
+
                 auto* session = static_cast<ClientSession*>(client->_tempObject);
                 if (session) {
                     if (info->index == 0) {
@@ -594,6 +600,17 @@ void ChatManager::handleTttMessage(AsyncWebSocketClient* client, const String& m
 
     targetUid.toUpperCase();
 
+    // Secure reconstruction of the Tic-Tac-Toe JSON to override the "from" field
+    // with the sender's actual session->uid, preventing spoofing exploits.
+    String cmd = getJsonValue(message, "cmd");
+    String cellVal = getJsonValue(message, "cell");
+
+    String secureMsg = "{\"type\":\"ttt\",\"from\":\"" + session->uid + "\",\"to\":\"" + targetUid + "\",\"cmd\":\"" + cmd + "\"";
+    if (cellVal.length() > 0) {
+        secureMsg += ",\"cell\":" + cellVal;
+    }
+    secureMsg += "}";
+
     // 1. Prüfen, ob der Ziel-User lokal an diesem Node verbunden ist
     bool foundLocally = false;
     for (auto&& client_item : _ws.getClients()) {
@@ -601,7 +618,7 @@ void ChatManager::handleTttMessage(AsyncWebSocketClient* client, const String& m
         if (localClient && localClient->status() == WS_CONNECTED) {
             auto* s = static_cast<ClientSession*>(localClient->_tempObject);
             if (s && s->uid == targetUid) {
-                localClient->text(message);
+                localClient->text(secureMsg);
                 foundLocally = true;
                 break;
             }
@@ -611,7 +628,7 @@ void ChatManager::handleTttMessage(AsyncWebSocketClient* client, const String& m
 #if ENABLE_MESH
     // 2. Wenn nicht lokal gefunden, via ESP-NOW Mesh broadcasten
     if (!foundLocally) {
-        sendMeshBroadcast(6, message);
+        sendMeshBroadcast(6, secureMsg);
     }
 #endif
 }
