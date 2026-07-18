@@ -347,6 +347,8 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
                     auto* otherSession = static_cast<ClientSession*>(otherClient->_tempObject);
                     if (otherSession && otherSession->uid.equalsIgnoreCase(requestedUid)) {
                         Serial.println("[Session] Schließe alten/doppelten Client für UID: " + requestedUid);
+                        // Vor dem Schließen entziehen wir die UID, damit sie sofort für die neue Verbindung frei ist
+                        otherSession->uid = "";
                         otherClient->close();
                     }
                 }
