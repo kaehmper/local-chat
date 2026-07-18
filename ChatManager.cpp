@@ -118,12 +118,43 @@ String ChatManager::escapeHtml(const String& s) {
     return out;
 }
 
+bool ChatManager::isUidInUse(const String& uid) {
+    if (uid.length() != 4) return false;
+
+    // 1. Lokale WebSocket-Clients prüfen
+    for (auto&& client_item : _ws.getClients()) {
+        AsyncWebSocketClient* client = getClientPtr(client_item);
+        if (client && client->status() == WS_CONNECTED) {
+            auto* session = static_cast<ClientSession*>(client->_tempObject);
+            if (session && session->uid.equalsIgnoreCase(uid)) {
+                return true;
+            }
+        }
+    }
+
+    // 2. Bekannte Online-Nutzerliste (auch remote) prüfen
+    for (size_t i = 0; i < _onlineUsersCount; ++i) {
+        if (uid.equalsIgnoreCase(_onlineUsers[i].uid)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 String ChatManager::generateSessionId() {
-    // Hardware-RNG des ESP8266 nutzen
-    uint16_t r = static_cast<uint16_t>(ESP.random() & 0xFFFF);
     char buf[5];
-    std::sprintf(buf, "%04X", r);
-    return String(buf);
+    String uid;
+    // Max. 20 Versuche, um eine kollisionsfreie UID zu finden
+    for (int attempts = 0; attempts < 20; ++attempts) {
+        uint16_t r = static_cast<uint16_t>(ESP.random() & 0xFFFF);
+        std::sprintf(buf, "%04X", r);
+        uid = String(buf);
+        if (!isUidInUse(uid)) {
+            return uid;
+        }
+    }
+    return uid;
 }
 
 void ChatManager::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
@@ -235,9 +266,22 @@ static String getJsonValue(const String& json, const String& key) {
             start += searchKey.length();
             int endCom = json.indexOf(",", start);
             int endObj = json.indexOf("}", start);
-            int end = (endCom != -1 && endCom < endObj) ? endCom : endObj;
+            int end = -1;
+            if (endCom != -1 && endObj != -1) {
+                end = (endCom < endObj) ? endCom : endObj;
+            } else if (endCom != -1) {
+                end = endCom;
+            } else if (endObj != -1) {
+                end = endObj;
+            }
             if (end != -1) {
                 String val = json.substring(start, end);
+                val.replace("\"", "");
+                val.trim();
+                return val;
+            } else {
+                // Falls weder Komma noch schließende Klammer existieren, nimm den Rest des Strings
+                String val = json.substring(start);
                 val.replace("\"", "");
                 val.trim();
                 return val;
@@ -267,10 +311,18 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
             }
         }
 
-        if (isValid) {
+        // Falls die angeforderte UID gültig ist UND noch nicht besetzt ist, übernehmen wir sie.
+        // Andernfalls weisen wir eine neu generierte, eindeutige UID zu.
+        if (isValid && !isUidInUse(requestedUid)) {
             session->uid = requestedUid;
             session->uid.toUpperCase(); // In Großbuchstaben vereinheitlichen
             Serial.println("[Session] Vorhandene UID übernommen: " + session->uid);
+        } else {
+            // Falls bereits besetzt, verwerfen wir sie und weisen eine neue eindeutige UID zu
+            if (isValid && isUidInUse(requestedUid)) {
+                Serial.println("[Session] Angeforderte UID bereits vergeben: " + requestedUid + ", generiere neue UID.");
+            }
+            session->uid = generateSessionId();
         }
 
         // Füge den User sofort zur Online-Liste hinzu und sende ein Update

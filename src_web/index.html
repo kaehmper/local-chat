@@ -586,6 +586,18 @@
         .replace(/&amp;/g, '&');
     }
 
+    // Helper to escape HTML characters before raw output to innerHTML to prevent XSS
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;')
+        .replace(/\//g, '&#x2F;');
+    }
+
     function appendMessage(msgStr, scroll = true) {
       let uid = '';
       let text = msgStr;
@@ -654,8 +666,11 @@
     function updateUserList(list) {
       userList.innerHTML = '';
 
+      // Nur valide UIDs zulassen
+      const validList = list.filter(uid => isValidUid(uid));
+
       // Sortiere UIDs alphabetisch, eigene UID nach oben
-      const sortedList = [...new Set(list)].sort((a, b) => {
+      const sortedList = [...new Set(validList)].sort((a, b) => {
         if (a === myUid) return -1;
         if (b === myUid) return 1;
         return a.localeCompare(b);
@@ -674,6 +689,7 @@
           const btn = document.createElement('button');
           btn.className = 'invite-btn';
           btn.textContent = 'Spielen';
+          // click handler references a validated safe variable, but we can also be extra safe
           btn.onclick = () => invitePlayer(uid);
           li.appendChild(btn);
         }
@@ -711,9 +727,19 @@
       sendTttMessage(opponentUid, 'invite');
     }
 
+    function isValidUid(uid) {
+      return typeof uid === 'string' && /^[A-Fa-f0-9]{4}$/.test(uid);
+    }
+
     function handleTttEvent(data) {
       const from = data.from;
       const cmd = data.cmd;
+
+      // Validieren, dass der Absender eine gültige UID besitzt
+      if (!isValidUid(from)) {
+        console.warn("Ungültiger Absender bei Tic-Tac-Toe Nachricht ignoriert.");
+        return;
+      }
 
       if (cmd === 'invite') {
         // Wenn wir bereits spielen oder einladen, sind wir "busy"
@@ -855,17 +881,19 @@
     // --- Render-Helfer für Tic-Tac-Toe Screens ---
 
     function renderTttPendingInviteScreen() {
+      const escapedOpponent = escapeHtml(tttGameState.opponentUid);
       tttCard.innerHTML = `
         <span class="ttt-title">Spieleinladung</span>
-        <div class="ttt-status">Warte auf Antwort von Nutzer <b>${tttGameState.opponentUid}</b>...</div>
+        <div class="ttt-status">Warte auf Antwort von Nutzer <b>${escapedOpponent}</b>...</div>
         <button class="ttt-btn cancel" onclick="quitGame()">Abbrechen</button>
       `;
     }
 
     function renderTttAcceptInviteScreen(from) {
+      const escapedFrom = escapeHtml(from);
       tttCard.innerHTML = `
         <span class="ttt-title">Herausforderung!</span>
-        <div class="ttt-status">Nutzer <b>${from}</b> lädt dich zu einer Partie Tic-Tac-Toe ein!</div>
+        <div class="ttt-status">Nutzer <b>${escapedFrom}</b> lädt dich zu einer Partie Tic-Tac-Toe ein!</div>
         <div class="ttt-actions">
           <button class="ttt-btn confirm" onclick="acceptInvite()">Annehmen</button>
           <button class="ttt-btn cancel" onclick="declineInvite()">Ablehnen</button>
@@ -874,7 +902,8 @@
     }
 
     function renderTttBoardScreen() {
-      const turnText = tttGameState.myTurn ? '<b>Du bist dran!</b>' : `Warte auf Gegner (${tttGameState.opponentUid})...`;
+      const escapedOpponent = escapeHtml(tttGameState.opponentUid);
+      const turnText = tttGameState.myTurn ? '<b>Du bist dran!</b>' : `Warte auf Gegner (${escapedOpponent})...`;
 
       let gridHtml = '<div class="ttt-grid">';
       for (let i = 0; i < 9; ++i) {
@@ -890,7 +919,7 @@
 
       tttCard.innerHTML = `
         <span class="ttt-title">Tic-Tac-Toe</span>
-        <div class="ttt-status">Du spielst gegen <b>${tttGameState.opponentUid}</b> (Symbol: <b>${tttGameState.mySymbol}</b>)</div>
+        <div class="ttt-status">Du spielst gegen <b>${escapedOpponent}</b> (Symbol: <b>${tttGameState.mySymbol}</b>)</div>
         <div class="ttt-status">${turnText}</div>
         ${gridHtml}
         <button class="ttt-btn cancel" onclick="quitGame()">Aufgeben</button>
