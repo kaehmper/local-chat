@@ -50,12 +50,6 @@ private:
     size_t _count;
 };
 
-struct OnlineUser {
-    char uid[5];
-    uint32_t lastSeen;
-    bool isLocal;
-};
-
 /**
  * @struct OnlineUser
  * @brief Struktur zur Speicherung von Informationen über online befindliche Benutzer im Mesh.
@@ -145,6 +139,9 @@ private:
     void broadcastUserList();
     void addOrUpdateUser(const char* uid, bool isLocal);
     void handleTttMessage(AsyncWebSocketClient* client, const String& message);
+
+    // Prüft, ob eine UID bereits von einem lokalen Client oder im Mesh besetzt ist
+    bool isUidInUse(const String& uid);
 
     // Generiert eine sichere 4-stellige Hex-ID mithilfe des Hardware-RNG des ESP8266
     String generateSessionId();
