@@ -434,6 +434,21 @@ void ChatManager::addOrUpdateUser(const char* uid, bool isLocal) {
     }
 }
 
+String ChatManager::getOnlineUsersString() {
+    updateOnlineUsersList();
+    if (_onlineUsersCount == 0) {
+        return "Users: none";
+    }
+    String usersStr = "Users: ";
+    for (size_t i = 0; i < _onlineUsersCount; ++i) {
+        usersStr += _onlineUsers[i].uid;
+        if (i < _onlineUsersCount - 1) {
+            usersStr += ", ";
+        }
+    }
+    return usersStr;
+}
+
 void ChatManager::updateOnlineUsersList() {
     uint32_t now = millis();
 

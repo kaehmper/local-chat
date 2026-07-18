@@ -50,6 +50,12 @@ private:
     size_t _count;
 };
 
+struct OnlineUser {
+    char uid[5];
+    uint32_t lastSeen;
+    bool isLocal;
+};
+
 /**
  * @struct OnlineUser
  * @brief Struktur zur Speicherung von Informationen über online befindliche Benutzer im Mesh.
@@ -109,6 +115,11 @@ public:
      * @brief Hilfsfunktion zum Maskieren von HTML-Sonderzeichen (XSS-Schutz).
      */
     static String escapeHtml(const String& s);
+
+    /**
+     * @brief Gibt die Online-Nutzer als formatierte Zeichenkette zurück (z.B. "Users: 1A2B, 3C4D...").
+     */
+    String getOnlineUsersString();
 
 private:
     // WebSocket-Objekt für Echtzeitkommunikation
