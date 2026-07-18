@@ -77,6 +77,10 @@ void setup() {
     Serial.print("Konfiguriere Access Point: ");
     Serial.println(Config::CHATNAME);
 
+    // Setze maximale Sendeleistung und deaktiviere Stromsparmodi für maximale Leistung
+    WiFi.setSleepMode(WIFI_NONE_SLEEP);
+    WiFi.setOutputPower(Config::MAX_WIFI_POWER);
+
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig(apIP, apIP, subnet);
     WiFi.softAP(Config::CHATNAME, nullptr, Config::MESH_CHANNEL);

@@ -16,6 +16,7 @@ constexpr char CHATNAME[]        = "CardijnChat";           ///< Name des Access
 constexpr char BLURB[]           = "Lokaler CardijnChat";   ///< Slogan/Untertitel
 constexpr uint16_t HTTP_PORT     = 80;                      ///< Port des Webservers
 constexpr uint16_t DNS_PORT      = 53;                      ///< Port des DNS-Servers
+constexpr float MAX_WIFI_POWER   = 20.5f;                   ///< Maximale WLAN-Sendeleistung in dBm (0 bis 20.5)
 
 // ---------- Mesh-Netzwerk ----------
 constexpr char MESH_PREFIX[]     = "PopupMeshPrivate";      ///< SSID für das interne Mesh-Backhaul
