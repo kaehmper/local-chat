@@ -111,6 +111,26 @@ public:
     static String escapeHtml(const String& s);
 
     /**
+     * @brief Triggert 3 Pulse für eine neue Chat-Nachricht.
+     */
+    void triggerMessagePulse();
+
+    /**
+     * @brief Triggert einen kurzen Puls für einen neuen User Connect.
+     */
+    void triggerConnectPulse();
+
+    /**
+     * @brief Aktualisiert die LED-Blinksequenzen (nicht blockierend, im Loop aufgerufen).
+     */
+    void updateLed(unsigned long now);
+
+    /**
+     * @brief Gibt zurück, ob gerade eine Pulssequenz auf der LED aktiv ist.
+     */
+    bool isLedPulseActive() const { return _pulseTransitionsLeft > 0; }
+
+    /**
      * @brief Gibt die Online-Nutzer als formatierte Zeichenkette zurück (z.B. "Users: 1A2B, 3C4D...").
      */
     String getOnlineUsersString();
@@ -133,6 +153,11 @@ private:
     // Ticker-Puffer für die letzten drei eindeutigen Nachrichten
     String _tickerMessages[3];
     size_t _tickerCount;
+
+    // LED Pulsing State-Machine
+    int _pulseTransitionsLeft;      // Anzahl verbleibender LED-Zustandswechsel
+    unsigned long _nextTransitionTime; // Zeitpunkt des nächsten Wechsels in ms
+    bool _pulseLedOn;               // Ob die LED im Puls-Zustand an sein soll
 
     // Online-Nutzer-Verwaltung (lokal & mesh-weit)
     static constexpr size_t MAX_ONLINE_USERS = 32;

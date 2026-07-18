@@ -28,7 +28,7 @@ constexpr size_t MAX_MESSAGES    = 40;                      ///< Maximale Anzahl
 constexpr size_t MAX_MSG_LENGTH  = 200;                     ///< Maximale Länge einer Nachricht in Zeichen
 
 // ---------- Aktivitäts-LED & Timer ----------
-constexpr uint8_t ACTIVITY_LED   = 2;                       ///< GPIO der Aktivitäts-LED (ESP8266 Builtin LED ist meist GPIO 2)
+constexpr uint8_t ACTIVITY_LED   = 3;                       ///< GPIO der Aktivitäts-LED (für GPIO 3)
 constexpr bool ACTIVITY_REVERSE  = true;                    ///< true, wenn die LED Low-Active ist (beim ESP8266 meist der Fall)
 constexpr uint32_t ACTIVITY_DURATION = 20000;               ///< Inaktivitäts-Timeout in ms (20 Sekunden)
 constexpr uint32_t TICK_INTERVAL     = 1000;                ///< Takt-Intervall für die LED-Steuerung in ms
