@@ -50,6 +50,12 @@ private:
     size_t _count;
 };
 
+struct OnlineUser {
+    char uid[5];
+    uint32_t lastSeen;
+    bool isLocal;
+};
+
 /**
  * @class ChatManager
  * @brief Verwaltet die Chat-Räume, WebSockets, Sitzungen und Authentifizierung.
