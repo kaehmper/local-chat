@@ -34,6 +34,12 @@ constexpr bool ACTIVITY_REVERSE  = true;                    ///< true, wenn die 
 constexpr uint32_t ACTIVITY_DURATION = 20000;               ///< Inaktivitäts-Timeout in ms (20 Sekunden)
 constexpr uint32_t TICK_INTERVAL     = 1000;                ///< Takt-Intervall für die LED-Steuerung in ms
 
+// LED Puls-Konfigurationen
+constexpr uint32_t MSG_PULSE_DURATION_MS = 20;              ///< Dauer pro Zustand (an/aus) bei Nachrichteneingang
+constexpr uint32_t MSG_PULSE_COUNT       = 4;               ///< Anzahl der vollständigen Blinkzyklen bei Nachrichteneingang
+constexpr uint32_t CONNECT_PULSE_DURATION_MS = 40;          ///< Dauer pro Zustand (an/aus) bei Connect
+constexpr uint32_t CONNECT_PULSE_COUNT       = 2;           ///< Anzahl der vollständigen Blinkzyklen bei Connect
+
 // ---------- OLED-Display (SSD1306) ----------
 constexpr bool ENABLE_OLED       = true;                    ///< Setzen Sie dies auf false, um das Display zu deaktivieren
 constexpr uint8_t OLED_SDA       = 4;                       ///< GPIO für SDA (standardmäßig GPIO 4 / D2)

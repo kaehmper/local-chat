@@ -64,28 +64,64 @@ void OledManager::drawMessagesScreen(size_t msgCount, const std::function<String
         return;
     }
 
-    // Display the last 6 messages, one per page (Pages 2 to 7)
-    size_t displayCount = msgCount > 6 ? 6 : msgCount;
-    size_t startIdx = msgCount - displayCount;
+    // Find how many of the most recent messages can fit within Pages 2 to 7 (6 lines)
+    size_t scanCount = msgCount > 6 ? 6 : msgCount;
 
-    for (size_t i = 0; i < displayCount; ++i) {
-        String msg = getMsg(startIdx + i);
-        // Ensure it doesn't exceed 21 characters to prevent wrapping
-        if (msg.length() > 21) {
-            msg = msg.substring(0, 18) + "...";
-        } else {
-            // Fill with spaces to clear any old character residue on the line
-            while (msg.length() < 21) {
-                msg += " ";
+    struct MsgInfo {
+        size_t index;
+        String text;
+        int lines;
+    };
+    MsgInfo candidates[6];
+    size_t candidateCount = 0;
+
+    int totalLines = 0;
+    for (size_t i = 0; i < scanCount; ++i) {
+        size_t idx = msgCount - 1 - i;
+        String text = getMsg(idx);
+
+        // Count wrapped lines
+        int lines = 0;
+        int colCount = 0;
+        for (size_t j = 0; j < text.length(); ++j) {
+            char c = text[j];
+            if (c == '\r') continue;
+            if (c == '\n') {
+                lines++;
+                colCount = 0;
+                continue;
             }
+            if (colCount >= 21) {
+                lines++;
+                colCount = 0;
+            }
+            colCount++;
         }
-        _oled.setCursor(0, 2 + i);
-        _oled.print(msg.c_str());
+        lines++; // Count the last/current line
+
+        if (totalLines + lines > 6) {
+            // If even the newest single message exceeds 6 lines, display it up to 6 lines
+            if (candidateCount == 0) {
+                candidates[candidateCount++] = {idx, text, 6};
+                totalLines = 6;
+            }
+            break;
+        }
+
+        candidates[candidateCount++] = {idx, text, lines};
+        totalLines += lines;
+    }
+
+    // Draw candidates chronologically (oldest at the top, newest at the bottom of candidate list)
+    uint8_t currentPage = 2;
+    for (int i = (int)candidateCount - 1; i >= 0; --i) {
+        _oled.printWrapped(candidates[i].text, currentPage, candidates[i].lines);
+        currentPage += candidates[i].lines;
     }
 
     // Clear any remaining lines below the messages
-    for (size_t i = displayCount; i < 6; ++i) {
-        _oled.setCursor(0, 2 + i);
+    for (uint8_t p = currentPage; p < 8; ++p) {
+        _oled.setCursor(0, p);
         _oled.print("                     ");
     }
 }

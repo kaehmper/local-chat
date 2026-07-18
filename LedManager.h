@@ -50,4 +50,5 @@ private:
     int _pulseTransitionsLeft;         // Verbleibende LED-Zustandswechsel
     unsigned long _nextTransitionTime; // Zeitpunkt des nächsten Wechsels in ms
     bool _pulseLedOn;                  // Ob die LED im Puls-Zustand an sein soll
+    uint32_t _currentTransitionDuration; // Aktuelle Dauer pro Zustand in ms
 };
