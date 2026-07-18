@@ -65,12 +65,15 @@ void ChatManager::update() {
 
     // OLED-Zustandsmaschine aktualisieren
     bool systemActive = (now - _lastActivity) < Config::ACTIVITY_DURATION;
+    updateOnlineUsersList();
     _oledManager.update(
         now,
         systemActive,
-        getOnlineUsersString(),
-        _tickerCount,
-        [this](size_t idx) { return getLastTickerMessage(idx); },
+        _onlineUsersCount,
+        [this](size_t idx) { return String(_onlineUsers[idx].uid); },
+        [this](size_t idx) { return _onlineUsers[idx].isLocal; },
+        _openRoom.size(),
+        [this](size_t idx) { return String(_openRoom.get(idx)); },
         getConnectedNodesCount()
     );
 

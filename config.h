@@ -39,4 +39,7 @@ constexpr uint8_t OLED_SDA       = 4;                       ///< GPIO für SDA (
 constexpr uint8_t OLED_SCL       = 5;                       ///< GPIO für SCL (standardmäßig GPIO 5 / D1)
 constexpr uint8_t OLED_I2C_ADDR  = 0x3C;                    ///< 7-Bit I2C-Adresse (entspricht 8-Bit-Schreibadresse 0x78)
 
+// ---------- Hardware Taster ----------
+constexpr uint8_t BUTTON_PIN     = 1;                       ///< GPIO des Hardware Tasters zum Umschalten (TX Pin, active-low)
+
 } // namespace Config
