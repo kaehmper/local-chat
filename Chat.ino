@@ -95,68 +95,73 @@ void updateOLEDDisplay(unsigned long now) {
 
             // Bewege die Position des Textes zufällig / versetzt
             ssCol = (ssCol + 15) % 45; // Max. Spalte, damit Text noch auf Bildschirm passt
-            ssPage = (ssPage + 1) % 6;  // Max. Page, damit zweizeiliger Text passt
+            ssPage = (ssPage + 1) % 6;  // Max. Page, damit dreizeiliger Text passt (ssPage + 2 <= 7)
+
+            // Berechne die Uptime des Geräts in h m s Format
+            unsigned long total_secs = now / 1000;
+            unsigned int hours = total_secs / 3600;
+            unsigned int minutes = (total_secs % 3600) / 60;
+            unsigned int seconds = total_secs % 60;
+            String runtimeStr = String(hours) + "h " + String(minutes) + "m " + String(seconds) + "s";
 
             oled.setCursor(ssCol, ssPage);
-            oled.print("zZz CardijnChat");
+            oled.print(Config::CHATNAME);
             oled.setCursor(ssCol, ssPage + 1);
-            oled.print("  10.10.10.1");
+            oled.print("10.10.10.1");
+            oled.setCursor(ssCol, ssPage + 2);
+            oled.print(runtimeStr.c_str());
         }
         return;
     }
+
+    static bool showUserList = false;
 
     // Wenn Aktivität erkannt wurde, aber der Screensaver noch aktiv war
     if (oledScreensaverActive) {
         oledScreensaverActive = false;
         oled.clear();
         lastOledTick = 0; // Sofortiges Neuzeichnen triggern
+        showUserList = false; // Zurücksetzen auf die Nachrichten- bzw. AP-Info-Ansicht
     }
 
-    size_t tickerMsgCount = chatManager.getTickerMessageCount();
+    // Ticker-Rotation / Bildschirm-Wechsel alle 5 Sekunden
+    if (now - lastOledTick >= 5000 || lastOledTick == 0) {
+        lastOledTick = now;
+        oled.clear();
+        drawHeader();
 
-    if (tickerMsgCount == 0) {
-        // Standby/Boot-Bildschirm bei fehlenden Nachrichten
-        if (now - lastOledTick >= 5000 || lastOledTick == 0) {
-            lastOledTick = now;
-            oled.clear();
-            drawHeader();
+        if (showUserList) {
+            // Online-Nutzerliste anzeigen
+            String usersStr = chatManager.getOnlineUsersString();
+            oled.printWrapped(usersStr, 2, 6);
+        } else {
+            size_t tickerMsgCount = chatManager.getTickerMessageCount();
+            if (tickerMsgCount == 0) {
+                // Standby/Boot-Bildschirm bei fehlenden Nachrichten
+                oled.setCursor(0, 2);
+                oled.print("AP:  ");
+                oled.print(Config::CHATNAME);
 
-            oled.setCursor(0, 2);
-            oled.print("AP:  ");
-            oled.print(Config::CHATNAME);
+                oled.setCursor(0, 4);
+                oled.print("IP:  10.10.10.1");
 
-            oled.setCursor(0, 4);
-            oled.print("IP:  10.10.10.1");
-
-            oled.setCursor(0, 6);
-            oled.print("Warte auf Chat...");
-        }
-    } else {
-        // Ticker-Rotation (alle 5 Sekunden die nächste Nachricht anzeigen)
-        if (now - lastOledTick >= 5000 || lastOledTick == 0) {
-            lastOledTick = now;
-            oled.clear();
-            drawHeader();
-
-            if (currentTickerIndex >= tickerMsgCount) {
-                currentTickerIndex = 0;
+                oled.setCursor(0, 6);
+                oled.print("Warte auf Chat...");
+            } else {
+                // Die letzten 3 eindeutigen Nachrichten zusammen anzeigen (älteste oben, neueste unten)
+                String msgStr = "";
+                for (size_t i = 0; i < tickerMsgCount; ++i) {
+                    msgStr += chatManager.getLastTickerMessage(tickerMsgCount - 1 - i);
+                    if (i < tickerMsgCount - 1) {
+                        msgStr += "\n";
+                    }
+                }
+                oled.printWrapped(msgStr, 1, 7);
             }
-
-            // Status-Zeile des Newstickers
-            oled.setCursor(0, 1);
-            oled.print("Ticker (");
-            oled.print(String(currentTickerIndex + 1).c_str());
-            oled.print("/");
-            oled.print(String(tickerMsgCount).c_str());
-            oled.print("):");
-
-            // Die Nachricht holen und zeilenweise ab Zeile 3 rendern
-            String msg = chatManager.getLastTickerMessage(currentTickerIndex);
-            oled.printWrapped(msg, 3, 5);
-
-            // Rotations-Index inkrementieren
-            currentTickerIndex = (currentTickerIndex + 1) % tickerMsgCount;
         }
+
+        // Zustand umschalten für den nächsten Wechsel
+        showUserList = !showUserList;
     }
 }
 

@@ -100,6 +100,11 @@ public:
      */
     static String escapeHtml(const String& s);
 
+    /**
+     * @brief Gibt die Online-Nutzer als formatierte Zeichenkette zurück (z.B. "Users: 1A2B, 3C4D...").
+     */
+    String getOnlineUsersString();
+
 private:
     // WebSocket-Objekt für Echtzeitkommunikation
     AsyncWebSocket _ws;
