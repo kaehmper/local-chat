@@ -7,76 +7,29 @@ struct ClientSession {
     String wsBuffer;
 };
 
-// Globaler externer Zeiger auf ChatManager (für statische ESP-NOW Callbacks)
-extern ChatManager chatManager;
-
-// Hilfsfunktionen zur versionsunabhängigen Ermittlung des Zeigers auf einen Client
+// Hilfsfunktionen zur versionsunabhängigen Ermittlung des Zeigers auf einen Client (muss ganz oben deklariert sein)
 static inline AsyncWebSocketClient* getClientPtr(AsyncWebSocketClient* p) { return p; }
 static inline AsyncWebSocketClient* getClientPtr(AsyncWebSocketClient& r) { return &r; }
 
-// ==================== MessageRingBuffer ====================
-
-MessageRingBuffer::MessageRingBuffer() : _start(0), _count(0) {
-    std::memset(_buffer, 0, sizeof(_buffer));
-}
-
-void MessageRingBuffer::add(const String& msg) {
-    size_t idx = (_start + _count) % Config::MAX_MESSAGES;
-    std::strncpy(_buffer[idx], msg.c_str(), Config::MAX_MSG_LENGTH);
-    _buffer[idx][Config::MAX_MSG_LENGTH] = '\0'; // Nullterminierung sichern
-
-    if (_count < Config::MAX_MESSAGES) {
-        _count++;
-    } else {
-        _start = (_start + 1) % Config::MAX_MESSAGES;
-    }
-}
-
-size_t MessageRingBuffer::size() const {
-    return _count;
-}
-
-const char* MessageRingBuffer::get(size_t index) const {
-    if (index >= _count) return "";
-    size_t idx = (_start + index) % Config::MAX_MESSAGES;
-    return _buffer[idx];
-}
-
-
-// ==================== ChatManager ====================
-
 ChatManager::ChatManager()
-    : _ws("/ws"), _lastActivity(0), _tickerCount(0), _pulseTransitionsLeft(0), _nextTransitionTime(0), _pulseLedOn(false), _onlineUsersCount(0), _lastUserListBroadcastTime(0) {
-#if ENABLE_MESH
-    _nodeId = 0;
-    _lastPingTime = 0;
-    _syncInProgress = false;
-    _syncNextIndex = 0;
-    _lastSyncMsgTime = 0;
-    _remoteNodesCount = 0;
-    std::memset(_remoteNodes, 0, sizeof(_remoteNodes));
-#endif
-}
-
-size_t ChatManager::getConnectedNodesCount() {
-#if ENABLE_MESH
-    uint32_t now = millis();
-    size_t activeCount = 0;
-    for (size_t i = 0; i < _remoteNodesCount; ++i) {
-        if (now - _remoteNodes[i].lastSeen < 10000) { // 10 seconds active timeout to prevent flickering with 4s ping
-            activeCount++;
-        }
-    }
-    return activeCount;
-#else
-    return 0;
-#endif
+    : _ws("/ws"),
+      _lastActivity(0),
+      _tickerCount(0),
+      _onlineUsersCount(0),
+      _lastUserListBroadcastTime(0) {
+    std::memset(_onlineUsers, 0, sizeof(_onlineUsers));
 }
 
 void ChatManager::begin(AsyncWebServer* server) {
     _lastActivity = millis();
 
-    // WebSocket-Event-Callback registrieren mit versionskompatiblem AwsEventType
+    // LED initialisieren
+    _ledManager.begin();
+
+    // OLED initialisieren
+    _oledManager.begin();
+
+    // WebSocket-Event-Callback registrieren
     _ws.onEvent([this](AsyncWebSocket* s, AsyncWebSocketClient* c,
                        AwsEventType t, void* arg, uint8_t* d, size_t l) {
         this->onWsEvent(s, c, t, arg, d, l);
@@ -84,108 +37,233 @@ void ChatManager::begin(AsyncWebServer* server) {
 
     server->addHandler(&_ws);
 
-#if ENABLE_MESH
-    initMesh();
-#endif
+    // Mesh-Manager initialisieren mit Lambda-Callbacks zur Entkopplung
+    _meshManager.begin(
+        [this](const String& msg) { this->handleMeshIncomingMsg(msg); },
+        [this]() { this->handleMeshSyncEnd(); },
+        [this](const String& payload) { this->handleMeshUserPing(payload); },
+        [this](const String& payload) { this->handleMeshTttMsg(payload); }
+    );
 }
 
-void ChatManager::cleanup() {
+void ChatManager::update() {
     _ws.cleanupClients();
 
     uint32_t now = millis();
+
+    // Periodischer User-Listen Broadcast (alle 4 Sekunden)
     if (now - _lastUserListBroadcastTime > 4000) {
         _lastUserListBroadcastTime = now;
         broadcastUserList();
     }
 
-#if ENABLE_MESH
-    // Periodische Bereinigung abgelaufener Remote-Knoten im Hauptloop-Cleanup,
-    // um sicherzustellen, dass die Liste immer auf dem neuesten Stand ist.
-    size_t writeIdx = 0;
-    for (size_t i = 0; i < _remoteNodesCount; ++i) {
-        if (now - _remoteNodes[i].lastSeen < 10000) { // 10 seconds active timeout
-            _remoteNodes[writeIdx++] = _remoteNodes[i];
+    // Mesh-Updates ausführen (Historien-Synchronisierung etc.)
+    _meshManager.update(
+        [this](size_t idx) { return String(_openRoom.get(idx)); },
+        _openRoom.size()
+    );
+
+    // OLED-Zustandsmaschine aktualisieren
+    bool systemActive = (now - _lastActivity) < Config::ACTIVITY_DURATION;
+    _oledManager.update(
+        now,
+        systemActive,
+        getOnlineUsersString(),
+        _tickerCount,
+        [this](size_t idx) { return getLastTickerMessage(idx); },
+        getConnectedNodesCount()
+    );
+
+    // Nicht-blockierendes LED-Blinken aktualisieren
+    _ledManager.update(now);
+}
+
+void ChatManager::handleMeshIncomingMsg(const String& msg) {
+    // Wenn über das Mesh eine Chat-Nachricht ankommt, prüfen wir sie auf Dubletten
+    bool exists = false;
+    size_t count = _openRoom.size();
+    for (size_t i = 0; i < count; ++i) {
+        if (msg.equals(_openRoom.get(i))) {
+            exists = true;
+            break;
         }
     }
-    _remoteNodesCount = writeIdx;
 
-    if (now - _lastPingTime > 60000) { // Alle 60 Sekunden periodischer Sync-Request
-        _lastPingTime = now;
-        sendMeshBroadcast(2, ""); // SYNC_REQ senden
+    if (!exists && msg.length() > 0) {
+        _openRoom.add(msg);
+        addTickerMessage(msg);
+        broadcastMessage(msg);
+
+        // LED pulsieren lassen bei neuer Nachricht
+        _ledManager.triggerMessagePulse();
+
+        // Systemaktivität aktualisieren (Nachrichteneingang gilt als Benutzeraktion)
+        _lastActivity = millis();
     }
+}
 
-    // Wenn eine Verlaufsübertragung (Sync-Request) ansteht, wickeln wir sie häppchenweise non-blocking hier ab
-    if (_syncInProgress) {
-        if (now - _lastSyncMsgTime >= 15) { // 15ms non-blocking delay zwischen Nachrichten
-            _lastSyncMsgTime = now;
-            size_t openCount = _openRoom.size();
-            if (_syncNextIndex < openCount) {
-                sendMeshBroadcast(3, _openRoom.get(_syncNextIndex)); // Type 3 (SYNC_MSG)
-                _syncNextIndex++;
-            } else {
-                // Alle Nachrichten übertragen. Sende Sync-Ende
-                sendMeshBroadcast(4, ""); // Type 4: SYNC_END
-                _syncInProgress = false;
-                Serial.println("[ESP-NOW] Verlaufs-Übertragung abgeschlossen.");
+void ChatManager::handleMeshSyncEnd() {
+    Serial.println("[ESP-NOW] Historien-Synchronisierung abgeschlossen. Aktualisiere Clients...");
+    // Sende Rauminitialisierungsdaten an alle verbundenen WebSockets, damit diese den Verlauf sehen
+    for (auto&& client_item : _ws.getClients()) {
+        AsyncWebSocketClient* client = getClientPtr(client_item);
+        if (client && client->status() == WS_CONNECTED) {
+            auto* session = static_cast<ClientSession*>(client->_tempObject);
+            if (session) {
+                sendRoomInit(client);
             }
         }
     }
-#endif
 }
 
-void ChatManager::triggerMessagePulse() {
-    // 3 vollständige Blink-Zyklen (An-Aus-An-Aus-An-Aus). Jedes Blink-Segment dauert z.B. 120ms.
-    // Ein vollständiger Puls hat 6 Transitionen (Zustandswechsel):
-    // 1: LED AN, 2: LED AUS, 3: LED AN, 4: LED AUS, 5: LED AN, 6: LED AUS.
-    _pulseTransitionsLeft = 6;
-    _pulseLedOn = true;
-    _nextTransitionTime = millis();
-    updateLed(millis());
-}
+void ChatManager::handleMeshUserPing(const String& payload) {
+    if (payload.length() == 0) return;
 
-void ChatManager::triggerConnectPulse() {
-    // 1 kurzer Puls (An-Aus). Ein vollständiger Puls hat 2 Transitionen:
-    // 1: LED AN, 2: LED AUS.
-    _pulseTransitionsLeft = 2;
-    _pulseLedOn = true;
-    _nextTransitionTime = millis();
-    updateLed(millis());
-}
-
-void ChatManager::updateLed(unsigned long now) {
-    if (_pulseTransitionsLeft <= 0) return;
-
-    if (now >= _nextTransitionTime) {
-        // LED-Status berechnen basierend auf ACTIVITY_REVERSE (Low-Active / High-Active)
-        bool level = _pulseLedOn ^ Config::ACTIVITY_REVERSE;
-        digitalWrite(Config::ACTIVITY_LED, level ? HIGH : LOW);
-
-        // Nächsten Wechsel planen
-        _nextTransitionTime = now + 120; // 120ms pro Zustand
-        _pulseLedOn = !_pulseLedOn;
-        _pulseTransitionsLeft--;
-
-        if (_pulseTransitionsLeft <= 0) {
-            // Nach dem Ende die LED wieder in den Grundzustand (AUS) versetzen
-            digitalWrite(Config::ACTIVITY_LED, Config::ACTIVITY_REVERSE ? HIGH : LOW);
+    int start = 0;
+    while (start < (int)payload.length()) {
+        int commaIdx = payload.indexOf(',', start);
+        String uidPart;
+        if (commaIdx == -1) {
+            uidPart = payload.substring(start);
+            start = payload.length();
+        } else {
+            uidPart = payload.substring(start, commaIdx);
+            start = commaIdx + 1;
+        }
+        uidPart.trim();
+        if (TicTacToeManager::isValidUid(uidPart)) {
+            addOrUpdateUser(uidPart.c_str(), false); // false = Remote User im Mesh
         }
     }
 }
 
-String ChatManager::escapeHtml(const String& s) {
-    String out;
-    out.reserve(s.length() + 10);
-    for (char c : s) {
+void ChatManager::handleMeshTttMsg(const String& payload) {
+    // Da Tic-Tac-Toe Züge als Benutzeraktivität zählen, wecken wir den Screensaver auf
+    _lastActivity = millis();
+
+    String targetUid = "";
+    // Zum Parsen von targetUid
+    String secureJson = "";
+    // Reiner Routing-Pass: Sende Payload an den passenden lokalen WebSocket-Client
+    // Da die Payload bereits sicher durch buildSecureMessage vom Absender-Knoten rekonstruiert wurde,
+    // können wir sie direkt an den Ziel-Client routen
+    int toIdx = payload.indexOf("\"to\":\"");
+    if (toIdx != -1) {
+        toIdx += 6;
+        targetUid = payload.substring(toIdx, toIdx + 4);
+        targetUid.toUpperCase();
+    }
+
+    if (TicTacToeManager::isValidUid(targetUid)) {
+        for (auto&& client_item : _ws.getClients()) {
+            AsyncWebSocketClient* localClient = getClientPtr(client_item);
+            if (localClient && localClient->status() == WS_CONNECTED) {
+                auto* s = static_cast<ClientSession*>(localClient->_tempObject);
+                if (s && s->uid == targetUid) {
+                    localClient->text(payload);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+static String escapeJsonStringValue(const String& val) {
+    String escaped;
+    escaped.reserve(val.length() + 8);
+    for (char c : val) {
         switch (c) {
-            case '&':  out += "&amp;"; break;
-            case '"':  out += "&quot;"; break;
-            case '\'': out += "&#x27;"; break;
-            case '<':  out += "&lt;";   break;
-            case '>':  out += "&gt;";   break;
-            default:   out += c;
+            case '\\': escaped += "\\\\"; break;
+            case '"':  escaped += "\\\""; break;
+            case '\n': escaped += "\\n";  break;
+            case '\r': escaped += "\\r";  break;
+            case '\t': escaped += "\\t";  break;
+            case '\b': escaped += "\\b";  break;
+            case '\f': escaped += "\\f";  break;
+            default:   escaped += c;      break;
         }
     }
-    return out;
+    return escaped;
+}
+
+static String unescapeJsonString(const String& val) {
+    String result;
+    result.reserve(val.length());
+    for (size_t i = 0; i < val.length(); i++) {
+        if (val[i] == '\\' && i + 1 < val.length()) {
+            char next = val[i+1];
+            switch (next) {
+                case '"':  result += '"';  i++; break;
+                case '\\': result += '\\'; i++; break;
+                case '/':  result += '/';  i++; break;
+                case 'b':  result += '\b'; i++; break;
+                case 'f':  result += '\f'; i++; break;
+                case 'n':  result += '\n'; i++; break;
+                case 'r':  result += '\r'; i++; break;
+                case 't':  result += '\t'; i++; break;
+                default:   result += '\\'; break;
+            }
+        } else {
+            result += val[i];
+        }
+    }
+    return result;
+}
+
+static String getJsonValue(const String& json, const String& key) {
+    String searchKey = "\"" + key + "\":\"";
+    int start = json.indexOf(searchKey);
+    if (start != -1) {
+        start += searchKey.length();
+        int end = -1;
+        int curr = start;
+        while (curr < (int)json.length()) {
+            int nextQuote = json.indexOf('"', curr);
+            if (nextQuote == -1) break;
+            int backslashes = 0;
+            int bsIndex = nextQuote - 1;
+            while (bsIndex >= start && json[bsIndex] == '\\') {
+                backslashes++;
+                bsIndex--;
+            }
+            if (backslashes % 2 == 0) {
+                end = nextQuote;
+                break;
+            }
+            curr = nextQuote + 1;
+        }
+        if (end != -1) {
+            return unescapeJsonString(json.substring(start, end));
+        }
+    } else {
+        searchKey = "\"" + key + "\":";
+        start = json.indexOf(searchKey);
+        if (start != -1) {
+            start += searchKey.length();
+            int endCom = json.indexOf(",", start);
+            int endObj = json.indexOf("}", start);
+            int end = -1;
+            if (endCom != -1 && endObj != -1) {
+                end = (endCom < endObj) ? endCom : endObj;
+            } else if (endCom != -1) {
+                end = endCom;
+            } else if (endObj != -1) {
+                end = endObj;
+            }
+            if (end != -1) {
+                String val = json.substring(start, end);
+                val.replace("\"", "");
+                val.trim();
+                return val;
+            } else {
+                String val = json.substring(start);
+                val.replace("\"", "");
+                val.trim();
+                return val;
+            }
+        }
+    }
+    return "";
 }
 
 bool ChatManager::isUidInUse(const String& uid) {
@@ -202,7 +280,7 @@ bool ChatManager::isUidInUse(const String& uid) {
         }
     }
 
-    // 2. Nur remote Online-Nutzer prüfen (lokale Online-Nutzer sind über WebSocket-Clients abgedeckt)
+    // 2. Nur remote Online-Nutzer prüfen
     for (size_t i = 0; i < _onlineUsersCount; ++i) {
         if (!_onlineUsers[i].isLocal && uid.equalsIgnoreCase(_onlineUsers[i].uid)) {
             return true;
@@ -215,7 +293,6 @@ bool ChatManager::isUidInUse(const String& uid) {
 String ChatManager::generateSessionId() {
     char buf[5];
     String uid;
-    // Max. 20 Versuche, um eine kollisionsfreie UID zu finden
     for (int attempts = 0; attempts < 20; ++attempts) {
         uint16_t r = static_cast<uint16_t>(ESP.random() & 0xFFFF);
         std::sprintf(buf, "%04X", r);
@@ -248,7 +325,7 @@ void ChatManager::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client
         case WS_EVT_DATA: {
             AwsFrameInfo* info = static_cast<AwsFrameInfo*>(arg);
             if (info->opcode == WS_TEXT) {
-                // DoS/Heap Exhaustion prevention: Reject messages longer than 2048 bytes
+                // DoS / Heap Exhaustion Prevention: Block frames > 2048 bytes
                 if (info->len > 2048) {
                     client->close();
                     break;
@@ -278,95 +355,6 @@ void ChatManager::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client
     }
 }
 
-static String unescapeJsonString(const String& val) {
-    String result;
-    result.reserve(val.length());
-    for (size_t i = 0; i < val.length(); i++) {
-        if (val[i] == '\\' && i + 1 < val.length()) {
-            char next = val[i+1];
-            switch (next) {
-                case '"':  result += '"';  i++; break;
-                case '\\': result += '\\'; i++; break;
-                case '/':  result += '/';  i++; break;
-                case 'b':  result += '\b'; i++; break;
-                case 'f':  result += '\f'; i++; break;
-                case 'n':  result += '\n'; i++; break;
-                case 'r':  result += '\r'; i++; break;
-                case 't':  result += '\t'; i++; break;
-                default:   result += '\\'; break; // Unbekannte Sequenz: Backslash behalten
-            }
-        } else {
-            result += val[i];
-        }
-    }
-    return result;
-}
-
-// Hilfsfunktion zum Parsen einfacher JSON-Schlüssel (Vermeidet Abhängigkeit von ArduinoJson)
-static String getJsonValue(const String& json, const String& key) {
-    // 1. String-Typ suchen: "key":"value"
-    String searchKey = "\"" + key + "\":\"";
-    int start = json.indexOf(searchKey);
-    if (start != -1) {
-        start += searchKey.length();
-
-        // Finde das korrekte schließende, nicht-escapte Anführungszeichen
-        int end = -1;
-        int curr = start;
-        while (curr < (int)json.length()) {
-            int nextQuote = json.indexOf('"', curr);
-            if (nextQuote == -1) break;
-
-            // Backslashes davor zählen
-            int backslashes = 0;
-            int bsIndex = nextQuote - 1;
-            while (bsIndex >= start && json[bsIndex] == '\\') {
-                backslashes++;
-                bsIndex--;
-            }
-            if (backslashes % 2 == 0) {
-                end = nextQuote;
-                break;
-            }
-            curr = nextQuote + 1;
-        }
-
-        if (end != -1) {
-            return unescapeJsonString(json.substring(start, end));
-        }
-    } else {
-        // 2. Andere Typen (Zahl, Boolean): "key":value
-        searchKey = "\"" + key + "\":";
-        start = json.indexOf(searchKey);
-        if (start != -1) {
-            start += searchKey.length();
-            int endCom = json.indexOf(",", start);
-            int endObj = json.indexOf("}", start);
-            int end = -1;
-            if (endCom != -1 && endObj != -1) {
-                end = (endCom < endObj) ? endCom : endObj;
-            } else if (endCom != -1) {
-                end = endCom;
-            } else if (endObj != -1) {
-                end = endObj;
-            }
-            if (end != -1) {
-                String val = json.substring(start, end);
-                val.replace("\"", "");
-                val.trim();
-                return val;
-            } else {
-                // Falls weder Komma noch schließende Klammer existieren, nimm den Rest des Strings
-                String val = json.substring(start);
-                val.replace("\"", "");
-                val.trim();
-                return val;
-            }
-        }
-    }
-    return "";
-}
-
 void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String& message) {
     auto* session = static_cast<ClientSession*>(client->_tempObject);
     if (!session) return;
@@ -375,28 +363,16 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
 
     if (type == "init") {
         String requestedUid = getJsonValue(message, "uid");
-        // Validiere die angeforderte UID: Muss exakt aus 4 Hexadezimalzeichen bestehen
-        bool isValid = (requestedUid.length() == 4);
-        if (isValid) {
-            for (int i = 0; i < 4; ++i) {
-                char c = requestedUid[i];
-                if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))) {
-                    isValid = false;
-                    break;
-                }
-            }
-        }
+        bool isValid = TicTacToeManager::isValidUid(requestedUid);
 
         if (isValid) {
-            // Falls eine andere WebSocket-Verbindung diese UID besitzt, schließen wir sie,
-            // damit der Benutzer sich nahtlos wieder verbinden kann (Reconnection).
+            // Reconnection: Wenn bereits ein anderer Client diese UID hat, trennen wir ihn
             for (auto&& client_item : _ws.getClients()) {
                 AsyncWebSocketClient* otherClient = getClientPtr(client_item);
                 if (otherClient && otherClient != client && otherClient->status() == WS_CONNECTED) {
                     auto* otherSession = static_cast<ClientSession*>(otherClient->_tempObject);
                     if (otherSession && otherSession->uid.equalsIgnoreCase(requestedUid)) {
                         Serial.println("[Session] Schließe alten/doppelten Client für UID: " + requestedUid);
-                        // Vor dem Schließen entziehen wir die UID, damit sie sofort für die neue Verbindung frei ist
                         otherSession->uid = "";
                         otherClient->close();
                     }
@@ -404,26 +380,23 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
             }
         }
 
-        // Falls die angeforderte UID gültig ist UND noch nicht besetzt ist, übernehmen wir sie.
-        // Andernfalls weisen wir eine neu generierte, eindeutige UID zu.
         if (isValid && !isUidInUse(requestedUid)) {
             session->uid = requestedUid;
-            session->uid.toUpperCase(); // In Großbuchstaben vereinheitlichen
+            session->uid.toUpperCase();
             Serial.println("[Session] Vorhandene UID übernommen: " + session->uid);
         } else {
-            // Falls bereits besetzt, verwerfen wir sie und weisen eine neue eindeutige UID zu
             if (isValid && isUidInUse(requestedUid)) {
-                Serial.println("[Session] Angeforderte UID bereits vergeben: " + requestedUid + ", generiere neue UID.");
+                Serial.println("[Session] Angeforderte UID bereits vergeben: " + requestedUid + ", generiere neue.");
             }
             session->uid = generateSessionId();
         }
 
-        // Füge den User sofort zur Online-Liste hinzu und sende ein Update
+        // Als lokalen Benutzer registrieren und Online-Liste verteilen
         addOrUpdateUser(session->uid.c_str(), true);
         broadcastUserList();
 
-        // Neuen User Connect mit einem kurzen Puls anzeigen
-        triggerConnectPulse();
+        // Kurzer Connect-LED-Puls
+        _ledManager.triggerConnectPulse();
 
         sendRoomInit(client);
     }
@@ -443,46 +416,26 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
             addTickerMessage(formattedMsg);
             broadcastMessage(formattedMsg);
 
-            // Trigger 3 LED-Pulse bei einer neuen Chat-Nachricht
-            triggerMessagePulse();
+            // LED-Nachrichten-Puls triggern
+            _ledManager.triggerMessagePulse();
 
-#if ENABLE_MESH
-            // Übertragungs-Eigenschaften für Echtzeit-Mesh-Nachrichten
-            sendMeshBroadcast(1, formattedMsg); // Type 1: CHAT_MSG
-#endif
+            // Aktivität registrieren
+            _lastActivity = millis();
+
+            // Echtzeit-Mesh-Übertragung
+            _meshManager.sendBroadcast(1, formattedMsg); // Type 1: CHAT_MSG
         }
     }
-}
-
-static String escapeJsonStringValue(const String& val) {
-    String escaped;
-    escaped.reserve(val.length() + 8);
-    for (char c : val) {
-        switch (c) {
-            case '\\': escaped += "\\\\"; break;
-            case '"':  escaped += "\\\""; break;
-            case '\n': escaped += "\\n";  break;
-            case '\r': escaped += "\\r";  break;
-            case '\t': escaped += "\\t";  break;
-            case '\b': escaped += "\\b";  break;
-            case '\f': escaped += "\\f";  break;
-            default:   escaped += c;      break;
-        }
-    }
-    return escaped;
 }
 
 void ChatManager::sendRoomInit(AsyncWebSocketClient* client) {
     auto* session = static_cast<ClientSession*>(client->_tempObject);
     if (!session) return;
 
-    const MessageRingBuffer& buffer = _openRoom;
-    size_t count = buffer.size();
-
-    // Exakten Speicherbedarf vorab berechnen, um Heap-Fragmentierung zu verhindern
+    size_t count = _openRoom.size();
     size_t requiredSize = 128 + session->uid.length();
     for (size_t i = 0; i < count; ++i) {
-        requiredSize += std::strlen(buffer.get(i)) + 8;
+        requiredSize += std::strlen(_openRoom.get(i)) + 8;
     }
 
     String json;
@@ -493,7 +446,7 @@ void ChatManager::sendRoomInit(AsyncWebSocketClient* client) {
     json += "\"messages\":[";
 
     for (size_t i = 0; i < count; ++i) {
-        json += "\"" + escapeJsonStringValue(buffer.get(i)) + "\"";
+        json += "\"" + escapeJsonStringValue(_openRoom.get(i)) + "\"";
         if (i < count - 1) {
             json += ",";
         }
@@ -513,7 +466,6 @@ void ChatManager::broadcastMessage(const String& msg) {
     for (auto&& client_item : _ws.getClients()) {
         AsyncWebSocketClient* client = getClientPtr(client_item);
         if (client && client->status() == WS_CONNECTED) {
-            // Verbindung bei stockender Warteschlange trennen, um Speicher zu schonen
             if (client->queueLen() > 4) {
                 client->close();
                 continue;
@@ -529,11 +481,8 @@ void ChatManager::broadcastMessage(const String& msg) {
 void ChatManager::addTickerMessage(const String& msg) {
     if (msg.length() == 0) return;
 
-    // Dubletten-Prüfung innerhalb des Ticker-Puffers, um redundante Einträge zu vermeiden
     for (size_t i = 0; i < _tickerCount; ++i) {
         if (_tickerMessages[i].equals(msg)) {
-            // Falls das Element bereits existiert, verschieben wir es an die Spitze (Index 0)
-            // und rücken die davor liegenden Elemente entsprechend nach hinten
             for (size_t j = i; j > 0; --j) {
                 _tickerMessages[j] = _tickerMessages[j - 1];
             }
@@ -542,7 +491,6 @@ void ChatManager::addTickerMessage(const String& msg) {
         }
     }
 
-    // Wenn es neu ist, schieben wir alle Elemente um 1 Position nach hinten
     _tickerMessages[2] = _tickerMessages[1];
     _tickerMessages[1] = _tickerMessages[0];
     _tickerMessages[0] = msg;
@@ -562,7 +510,6 @@ void ChatManager::addOrUpdateUser(const char* uid, bool isLocal) {
 
     uint32_t now = millis();
 
-    // Suchen, ob der Benutzer bereits vorhanden ist
     for (size_t i = 0; i < _onlineUsersCount; ++i) {
         if (std::strcmp(_onlineUsers[i].uid, uid) == 0) {
             _onlineUsers[i].lastSeen = now;
@@ -571,7 +518,6 @@ void ChatManager::addOrUpdateUser(const char* uid, bool isLocal) {
         }
     }
 
-    // Wenn nicht vorhanden, neu hinzufügen (falls Platz ist)
     if (_onlineUsersCount < MAX_ONLINE_USERS) {
         std::strncpy(_onlineUsers[_onlineUsersCount].uid, uid, 4);
         _onlineUsers[_onlineUsersCount].uid[4] = '\0';
@@ -599,18 +545,18 @@ String ChatManager::getOnlineUsersString() {
 void ChatManager::updateOnlineUsersList() {
     uint32_t now = millis();
 
-    // 1. Behalte Remote-User, die noch nicht abgelaufen sind (jünger als 10 Sekunden)
+    // 1. Behalte valide Remote-Benutzer, die jünger als 10 Sekunden sind
     size_t writeIdx = 0;
     for (size_t i = 0; i < _onlineUsersCount; ++i) {
         if (!_onlineUsers[i].isLocal) {
-            if (now - _onlineUsers[i].lastSeen < 10000) { // 10 seconds active timeout to prevent list flickering with 4s ping
+            if (now - _onlineUsers[i].lastSeen < 10000) {
                 _onlineUsers[writeIdx++] = _onlineUsers[i];
             }
         }
     }
     _onlineUsersCount = writeIdx;
 
-    // 2. Füge alle aktuell aktiv verbundenen WebSocket-Nutzer wieder als lokal hinzu
+    // 2. Füge alle aktuell lokal verbundenen WebSocket-Nutzer wieder hinzu
     for (auto&& client_item : _ws.getClients()) {
         AsyncWebSocketClient* client = getClientPtr(client_item);
         if (client && client->status() == WS_CONNECTED) {
@@ -625,7 +571,7 @@ void ChatManager::updateOnlineUsersList() {
 void ChatManager::broadcastUserList() {
     updateOnlineUsersList();
 
-    // 1. Lokale Benutzer sammeln, um sie an andere Nodes via ESP-NOW zu senden
+    // 1. Lokale Benutzer sammeln, um sie via ESP-NOW zu senden
     String localUids = "";
     for (size_t i = 0; i < _onlineUsersCount; ++i) {
         if (_onlineUsers[i].isLocal) {
@@ -634,13 +580,10 @@ void ChatManager::broadcastUserList() {
         }
     }
 
-#if ENABLE_MESH
-    // Sende lokalen User-Ping an andere Mesh-Knoten (Type 5)
-    // Auch senden, wenn localUids leer ist, damit der Knoten im Mesh entdeckt und aktiv gehalten wird
-    sendMeshBroadcast(5, localUids);
-#endif
+    // Sende lokalen User-Ping an andere Mesh-Knoten (auch wenn localUids leer ist, zur Entdeckung)
+    _meshManager.sendBroadcast(5, localUids);
 
-    // 2. Erstelle JSON mit ALLEN aktiven Online-Nutzern und sende es an alle WebSockets
+    // 2. Erstelle JSON mit allen aktiven Online-Nutzern und sende an alle WebSockets
     String json;
     json.reserve(256);
     json += "{\"type\":\"users\",\"list\":[";
@@ -667,21 +610,16 @@ void ChatManager::handleTttMessage(AsyncWebSocketClient* client, const String& m
     auto* session = static_cast<ClientSession*>(client->_tempObject);
     if (!session) return;
 
-    String targetUid = getJsonValue(message, "to");
-    if (targetUid.length() != 4) return;
+    // Wecken des Screensavers bei Tic-Tac-Toe Interaktion
+    _lastActivity = millis();
 
-    targetUid.toUpperCase();
+    String targetUid = "";
+    String secureMsg = "";
 
-    // Secure reconstruction of the Tic-Tac-Toe JSON to override the "from" field
-    // with the sender's actual session->uid, preventing spoofing exploits.
-    String cmd = getJsonValue(message, "cmd");
-    String cellVal = getJsonValue(message, "cell");
-
-    String secureMsg = "{\"type\":\"ttt\",\"from\":\"" + session->uid + "\",\"to\":\"" + targetUid + "\",\"cmd\":\"" + cmd + "\"";
-    if (cellVal.length() > 0) {
-        secureMsg += ",\"cell\":" + cellVal;
+    // Sichere Rekonstruktion mit TicTacToeManager, um Identitäts-Spoofing zu verhindern
+    if (!TicTacToeManager::buildSecureMessage(session->uid, message, targetUid, secureMsg)) {
+        return;
     }
-    secureMsg += "}";
 
     // 1. Prüfen, ob der Ziel-User lokal an diesem Node verbunden ist
     bool foundLocally = false;
@@ -697,235 +635,24 @@ void ChatManager::handleTttMessage(AsyncWebSocketClient* client, const String& m
         }
     }
 
-#if ENABLE_MESH
-    // 2. Wenn nicht lokal gefunden, via ESP-NOW Mesh broadcasten
+    // 2. Wenn nicht lokal, via ESP-NOW Mesh broadcasten
     if (!foundLocally) {
-        sendMeshBroadcast(6, secureMsg);
-    }
-#endif
-}
-
-// ==================== LIGHTWEIGHT ESP-NOW MESH BACKHAUL ====================
-#if ENABLE_MESH
-
-void ChatManager::initMesh() {
-    _nodeId = ESP.getChipId();
-    _lastPingTime = millis();
-
-    // Initialisiere das ESP-NOW SDK
-    if (esp_now_init() != 0) {
-        Serial.println("[ESP-NOW] Fehler bei der Initialisierung");
-        return;
-    }
-
-    esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
-
-    // Broadcast-Peer registrieren (MAC: FF:FF:FF:FF:FF:FF)
-    uint8_t broadcastMac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    esp_now_add_peer(broadcastMac, ESP_NOW_ROLE_COMBO, Config::MESH_CHANNEL, NULL, 0);
-
-    // Empfangs-Callback registrieren
-    esp_now_register_recv_cb(ChatManager::onEspNowRecv);
-
-    Serial.println("[ESP-NOW] Erfolgreich initialisiert auf Node ID: " + String(_nodeId));
-
-    // Nach dem Start einen Sync-Request broadcasten, um Nachbarn zu finden und Historie zu holen
-    sendMeshBroadcast(2, ""); // Type 2: SYNC_REQ
-}
-
-void ChatManager::onEspNowRecv(uint8_t* mac, uint8_t* incomingData, uint8_t len) {
-    if (len == sizeof(MeshPacket)) {
-        MeshPacket packet;
-        std::memcpy(&packet, incomingData, sizeof(MeshPacket));
-        chatManager.handleIncomingPacket(packet);
+        _meshManager.sendBroadcast(6, secureMsg); // Type 6: TTT_MSG
     }
 }
 
-void ChatManager::handleIncomingPacket(const MeshPacket& packet) {
-    // Eigene Pakete ignorieren
-    if (packet.senderId == _nodeId) {
-        return;
-    }
-
-    registerRemoteNode(packet.senderId);
-
-    // Registriere System-Aktivität nur bei tatsächlichen Benutzeraktionen (Chat-Nachricht oder Tic-Tac-Toe)
-    if (packet.packetType == 1 || packet.packetType == 6) {
-        _lastActivity = millis();
-    }
-
-    // Sicherstellen, dass das empfangene Nachrichtenfeld im Stack-Objekt nullterminiert ist (Verhinderung von Buffer Over-reads)
-    char safeMessage[sizeof(packet.message)];
-    std::memcpy(safeMessage, packet.message, sizeof(packet.message));
-    safeMessage[sizeof(packet.message) - 1] = '\0';
-
-    String msgPayload = String(safeMessage);
-
-    if (packet.packetType == 1) { // 1 = CHAT_MSG (Echtzeit-Nachricht)
-        MessageRingBuffer& targetRoom = _openRoom;
-
-        // Dubletten-Prüfung vor dem Einfügen
-        bool exists = false;
-        size_t count = targetRoom.size();
-        for (size_t i = 0; i < count; ++i) {
-            if (msgPayload.equals(targetRoom.get(i))) {
-                exists = true;
-                break;
-            }
-        }
-
-        if (!exists && msgPayload.length() > 0) {
-            targetRoom.add(msgPayload);
-            addTickerMessage(msgPayload);
-            // Lokal an alle WebSocket-Clients senden
-            broadcastMessage(msgPayload);
-
-            // Trigger 3 LED-Pulse bei einer neuen Chat-Nachricht (auch über Mesh empfangen)
-            triggerMessagePulse();
+String ChatManager::escapeHtml(const String& s) {
+    String out;
+    out.reserve(s.length() + 10);
+    for (char c : s) {
+        switch (c) {
+            case '&':  out += "&amp;"; break;
+            case '"':  out += "&quot;"; break;
+            case '\'': out += "&#x27;"; break;
+            case '<':  out += "&lt;";   break;
+            case '>':  out += "&gt;";   break;
+            default:   out += c;
         }
     }
-    else if (packet.packetType == 2) { // 2 = SYNC_REQ (Historie angefordert)
-        handleSyncRequest(packet.senderId);
-    }
-    else if (packet.packetType == 3) { // 3 = SYNC_MSG (Historien-Nachricht)
-        handleSyncResponse(packet);
-    }
-    else if (packet.packetType == 4) { // 4 = SYNC_END (Historie-Ende erreicht)
-        Serial.println("[ESP-NOW] Historien-Synchronisierung abgeschlossen. Aktualisiere Clients...");
-        // Re-Initialisiere alle lokalen WebSockets, damit die Historie sichtbar ist
-        for (auto&& client_item : _ws.getClients()) {
-            AsyncWebSocketClient* client = getClientPtr(client_item);
-            if (client && client->status() == WS_CONNECTED) {
-                auto* session = static_cast<ClientSession*>(client->_tempObject);
-                if (session) {
-                    sendRoomInit(client);
-                }
-            }
-        }
-    }
-    else if (packet.packetType == 5) { // 5 = USER_PING (Remote online users)
-        handleUserMeshPing(msgPayload);
-    }
-    else if (packet.packetType == 6) { // 6 = TTT_MSG (Tic-Tac-Toe Spielereignis)
-        handleMeshTttMessage(msgPayload);
-    }
+    return out;
 }
-
-void ChatManager::sendMeshBroadcast(uint8_t packetType, const String& msg) {
-    MeshPacket packet;
-    packet.packetType = packetType;
-    packet.senderId = _nodeId;
-
-    std::memset(packet.message, 0, sizeof(packet.message));
-    std::strncpy(packet.message, msg.c_str(), sizeof(packet.message) - 1);
-
-    uint8_t broadcastMac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    esp_now_send(broadcastMac, reinterpret_cast<uint8_t*>(&packet), sizeof(MeshPacket));
-}
-
-void ChatManager::handleSyncRequest(uint32_t targetNodeId) {
-    Serial.println("[ESP-NOW] Verlaufs-Anforderung von Node " + String(targetNodeId) + " empfangen. Starte non-blocking Sync...");
-
-    // Initiieren der non-blocking segmentierten Übertragung im main loop (cleanup)
-    _syncInProgress = true;
-    _syncNextIndex = 0;
-    _lastSyncMsgTime = millis();
-}
-
-void ChatManager::handleSyncResponse(const MeshPacket& packet) {
-    // Sicherstellen, dass das empfangene Nachrichtenfeld im Stack-Objekt nullterminiert ist (Verhinderung von Buffer Over-reads)
-    char safeMessage[sizeof(packet.message)];
-    std::memcpy(safeMessage, packet.message, sizeof(packet.message));
-    safeMessage[sizeof(packet.message) - 1] = '\0';
-
-    String msgPayload = String(safeMessage);
-    MessageRingBuffer& targetRoom = _openRoom;
-
-    // Dubletten-Prüfung vor dem Einfügen
-    bool exists = false;
-    size_t count = targetRoom.size();
-    for (size_t i = 0; i < count; ++i) {
-        if (msgPayload.equals(targetRoom.get(i))) {
-            exists = true;
-            break;
-        }
-    }
-
-    if (!exists && msgPayload.length() > 0) {
-        targetRoom.add(msgPayload);
-        addTickerMessage(msgPayload);
-    }
-}
-
-void ChatManager::handleUserMeshPing(const String& payload) {
-    if (payload.length() == 0) return;
-
-    int start = 0;
-    while (start < (int)payload.length()) {
-        int commaIdx = payload.indexOf(',', start);
-        String uidPart;
-        if (commaIdx == -1) {
-            uidPart = payload.substring(start);
-            start = payload.length();
-        } else {
-            uidPart = payload.substring(start, commaIdx);
-            start = commaIdx + 1;
-        }
-        uidPart.trim();
-        if (uidPart.length() == 4) {
-            addOrUpdateUser(uidPart.c_str(), false); // false = Remote User
-        }
-    }
-}
-
-void ChatManager::handleMeshTttMessage(const String& payload) {
-    String targetUid = getJsonValue(payload, "to");
-    if (targetUid.length() != 4) return;
-
-    targetUid.toUpperCase();
-
-    // Überprüfe, ob der Empfänger lokal an diesem Node verbunden ist
-    for (auto&& client_item : _ws.getClients()) {
-        AsyncWebSocketClient* localClient = getClientPtr(client_item);
-        if (localClient && localClient->status() == WS_CONNECTED) {
-            auto* s = static_cast<ClientSession*>(localClient->_tempObject);
-            if (s && s->uid == targetUid) {
-                localClient->text(payload);
-                break;
-            }
-        }
-    }
-}
-
-void ChatManager::registerRemoteNode(uint32_t nodeId) {
-    if (nodeId == 0 || nodeId == _nodeId) return;
-
-    uint32_t now = millis();
-
-    // 1. Clean up expired nodes (unseen for > 10 seconds)
-    size_t writeIdx = 0;
-    for (size_t i = 0; i < _remoteNodesCount; ++i) {
-        if (now - _remoteNodes[i].lastSeen < 10000) {
-            _remoteNodes[writeIdx++] = _remoteNodes[i];
-        }
-    }
-    _remoteNodesCount = writeIdx;
-
-    // 2. Find and update the node, or add it if not found
-    bool found = false;
-    for (size_t i = 0; i < _remoteNodesCount; ++i) {
-        if (_remoteNodes[i].nodeId == nodeId) {
-            _remoteNodes[i].lastSeen = now;
-            found = true;
-            break;
-        }
-    }
-
-    if (!found && _remoteNodesCount < MAX_REMOTE_NODES) {
-        _remoteNodes[_remoteNodesCount].nodeId = nodeId;
-        _remoteNodes[_remoteNodesCount].lastSeen = now;
-        _remoteNodesCount++;
-    }
-}
-
-#endif

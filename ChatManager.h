@@ -3,52 +3,12 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 
-#include "Config.h"
-
-#if ENABLE_MESH
-#include <espnow.h>
-
-#pragma pack(push, 1)
-struct MeshPacket {
-    uint8_t packetType;       // 1 = CHAT_MSG, 2 = SYNC_REQ, 3 = SYNC_MSG, 4 = SYNC_END
-    uint32_t senderId;        // Unique node sender ID
-    char message[201];        // Text message payload
-};
-#pragma pack(pop)
-
-#endif
-
-/**
- * @class MessageRingBuffer
- * @brief Eine hocheffiziente Ringpuffer-Implementierung für Chat-Nachrichten.
- *
- * Vermeidet teure dynamische Speicherverschiebungen durch rotierende Indizes.
- */
-class MessageRingBuffer {
-public:
-    MessageRingBuffer();
-
-    /**
-     * @brief Fügt eine Nachricht dem Ringpuffer hinzu.
-     * @param msg Die Nachricht.
-     */
-    void add(const String& msg);
-
-    /**
-     * @brief Gibt die Anzahl der aktuell gespeicherten Nachrichten zurück.
-     */
-    size_t size() const;
-
-    /**
-     * @brief Ruft eine Nachricht an einer bestimmten relativen Position ab (0 = älteste).
-     */
-    const char* get(size_t index) const;
-
-private:
-    char _buffer[Config::MAX_MESSAGES][Config::MAX_MSG_LENGTH + 1];
-    size_t _start;
-    size_t _count;
-};
+#include "config.h"
+#include "MessageRingBuffer.h"
+#include "LedManager.h"
+#include "OledManager.h"
+#include "TicTacToeManager.h"
+#include "MeshManager.h"
 
 /**
  * @struct OnlineUser
@@ -62,7 +22,7 @@ struct OnlineUser {
 
 /**
  * @class ChatManager
- * @brief Verwaltet die Chat-Räume, WebSockets, Sitzungen und Authentifizierung.
+ * @brief Koordiniert WebSockets, Online-Listen und verbindet alle Sub-Manager.
  */
 class ChatManager {
 public:
@@ -70,15 +30,14 @@ public:
     ~ChatManager() = default;
 
     /**
-     * @brief Initialisiert den ChatManager und registriert den WebSocket-Handler am Webserver.
-     * @param server Zeiger auf den AsyncWebServer.
+     * @brief Initialisiert den ChatManager und alle Sub-Manager. Registers the WS handler on the server.
      */
     void begin(AsyncWebServer* server);
 
     /**
-     * @brief Führt zyklische Aufräumarbeiten am WebSocket und Mesh durch.
+     * @brief Führt periodische Updates, Aufräumarbeiten und LED-Zustandswechsel durch.
      */
-    void cleanup();
+    void update();
 
     /**
      * @brief Gibt den Inaktivitäts-Zeitstempel zurück.
@@ -86,7 +45,7 @@ public:
     uint32_t getLastActivityTime() const { return _lastActivity; }
 
     /**
-     * @brief Ruft eine der letzten drei eindeutigen Nachrichten ab (0 = neueste, 1 = zweitneueste, 2 = drittneueste).
+     * @brief Ruft eine der letzten drei eindeutigen Ticker-Nachrichten ab.
      */
     String getLastTickerMessage(size_t index) const;
 
@@ -111,26 +70,6 @@ public:
     static String escapeHtml(const String& s);
 
     /**
-     * @brief Triggert 3 Pulse für eine neue Chat-Nachricht.
-     */
-    void triggerMessagePulse();
-
-    /**
-     * @brief Triggert einen kurzen Puls für einen neuen User Connect.
-     */
-    void triggerConnectPulse();
-
-    /**
-     * @brief Aktualisiert die LED-Blinksequenzen (nicht blockierend, im Loop aufgerufen).
-     */
-    void updateLed(unsigned long now);
-
-    /**
-     * @brief Gibt zurück, ob gerade eine Pulssequenz auf der LED aktiv ist.
-     */
-    bool isLedPulseActive() const { return _pulseTransitionsLeft > 0; }
-
-    /**
      * @brief Gibt die Online-Nutzer als formatierte Zeichenkette zurück (z.B. "Users: 1A2B, 3C4D...").
      */
     String getOnlineUsersString();
@@ -138,26 +77,26 @@ public:
     /**
      * @brief Gibt die Anzahl der verbundenen Remote-Mesh-Knoten zurück.
      */
-    size_t getConnectedNodesCount();
+    size_t getConnectedNodesCount() { return _meshManager.getConnectedNodesCount(); }
+
+    /**
+     * @brief Hilfsmethoden für LED-Schnittstellen (für Abwärtskompatibilität).
+     */
+    bool isLedPulseActive() const { return _ledManager.isPulseActive(); }
+    void updateLed(unsigned long now) { _ledManager.update(now); }
 
 private:
-    // WebSocket-Objekt für Echtzeitkommunikation
     AsyncWebSocket _ws;
-
-    // Chat-Raum
     MessageRingBuffer _openRoom;
+    LedManager _ledManager;
+    OledManager _oledManager;
+    MeshManager _meshManager;
 
-    // Zeitstempel der letzten Nutzeraktivität
     uint32_t _lastActivity;
 
     // Ticker-Puffer für die letzten drei eindeutigen Nachrichten
     String _tickerMessages[3];
     size_t _tickerCount;
-
-    // LED Pulsing State-Machine
-    int _pulseTransitionsLeft;      // Anzahl verbleibender LED-Zustandswechsel
-    unsigned long _nextTransitionTime; // Zeitpunkt des nächsten Wechsels in ms
-    bool _pulseLedOn;               // Ob die LED im Puls-Zustand an sein soll
 
     // Online-Nutzer-Verwaltung (lokal & mesh-weit)
     static constexpr size_t MAX_ONLINE_USERS = 32;
@@ -176,9 +115,6 @@ private:
     // Generiert eine sichere 4-stellige Hex-ID mithilfe des Hardware-RNG des ESP8266
     String generateSessionId();
 
-    // Berechnet das Authentifizierungs-Token basierend auf Passwort und Salt
-    String makeAuthToken();
-
     // Verarbeitet WebSocket-Ereignisse
     void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
                    AwsEventType type, void* arg, uint8_t* data, size_t len);
@@ -192,36 +128,9 @@ private:
     // Broadcastet eine Nachricht an alle Clients des Raumes
     void broadcastMessage(const String& msg);
 
-#if ENABLE_MESH
-public:
-    // Statischer Callback für ESP-NOW Empfang
-    static void onEspNowRecv(uint8_t* mac, uint8_t* incomingData, uint8_t len);
-
-private:
-    uint32_t _nodeId;
-    uint32_t _lastPingTime;
-
-    // Non-blocking Defer-Schnittstelle für Verlaufs-Synchronisierung
-    bool _syncInProgress;
-    size_t _syncNextIndex;
-    uint32_t _lastSyncMsgTime;
-
-    // Active nodes tracking
-    struct ActiveNode {
-        uint32_t nodeId;
-        uint32_t lastSeen;
-    };
-    static constexpr size_t MAX_REMOTE_NODES = 32;
-    ActiveNode _remoteNodes[MAX_REMOTE_NODES];
-    size_t _remoteNodesCount;
-
-    void registerRemoteNode(uint32_t nodeId);
-    void initMesh();
-    void sendMeshBroadcast(uint8_t packetType, const String& msg);
-    void handleIncomingPacket(const MeshPacket& packet);
-    void handleSyncRequest(uint32_t targetNodeId);
-    void handleSyncResponse(const MeshPacket& packet);
-    void handleUserMeshPing(const String& payload);
-    void handleMeshTttMessage(const String& payload);
-#endif
+    // Callback-Handler für ESP-NOW Mesh-Ereignisse
+    void handleMeshIncomingMsg(const String& msg);
+    void handleMeshSyncEnd();
+    void handleMeshUserPing(const String& payload);
+    void handleMeshTttMsg(const String& payload);
 };

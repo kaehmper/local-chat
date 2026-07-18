@@ -1,28 +1,23 @@
 /**
- * @file PopupChat.ino
- * @brief Hauptdatei für den PopupChat - Lokaler Echtzeit-Chat mit Captive Portal.
+ * @file Chat.ino
+ * @brief Hauptdatei für den CardijnChat - Lokaler Echtzeit-Chat mit Captive Portal.
  *
- * Diese Implementierung nutzt modernste Web-Technologien (Single Page Application via WebSockets)
- * und hochperformante Speicherverfahren (Gzip-komprimierte Web-Assets im PROGMEM),
- * um ein erstklassiges Benutzererlebnis auf dem ESP8266 zu bieten.
+ * Verwaltet Netzwerk-Boot, Captive Portal Weiterleitungen und delegiert alle Updates
+ * an die spezialisierten Sub-Manager.
  */
 
 #include <ESP8266WiFi.h>
 #include <ESPAsyncWebServer.h>
 
-#include "Config.h"
+#include "config.h"
 #include "WebAssets.h"
 #include "DNSServer.h"
 #include "ChatManager.h"
-#include "SSD1306.h"
 
 // ---------- Globale Instanzen ----------
 AsyncWebServer server(Config::HTTP_PORT);
 CustomDNSServer dnsServer;
 ChatManager chatManager;
-
-// SSD1306 OLED Instanz
-SSD1306 oled(Config::OLED_I2C_ADDR, Config::OLED_SDA, Config::OLED_SCL);
 
 IPAddress apIP(10, 10, 10, 1);
 IPAddress subnet(255, 255, 255, 0);
@@ -49,14 +44,14 @@ void handleServeIndex(AsyncWebServerRequest *request) {
 
     // Falls der Host nicht unsere lokale IP-Adresse ist (z.B. bei Eingabe von neverssl.com),
     // leiten wir den Client sofort per 302-Redirect auf unsere kanonische IP http://10.10.10.1/ um.
-    // Dies ändert die Browser-Adresszeile und sichert die fehlerfreie Verbindung des WebSockets!
+    // Dies sichert die fehlerfreie Verbindung des WebSockets!
     String hostHeader = request->host();
     if (hostHeader != "10.10.10.1" && hostHeader != "10.10.10.1:80") {
         handleRedirect(request);
         return;
     }
 
-    // Hocheffizientes Senden des vor-komprimierten SPA-Frontends aus dem PROGMEM
+    // Senden des vor-komprimierten SPA-Frontends aus dem PROGMEM
     AsyncWebServerResponse *response = request->beginResponse_P(
         200,
         "text/html",
@@ -68,165 +63,22 @@ void handleServeIndex(AsyncWebServerRequest *request) {
     request->send(response);
 }
 
-// ---------- OLED Ticker- & Screensaver-Steuerung ----------
-unsigned long lastOledTick = 0;
-size_t currentTickerIndex = 0;
-bool oledScreensaverActive = false;
-int ssCol = 0;
-int ssPage = 0;
-
-void drawHeader() {
-    oled.setCursor(0, 0);
-    oled.print("=== [CardijnChat] ===");
-}
-
-void updateOLEDDisplay(unsigned long now) {
-    if (!Config::ENABLE_OLED) return;
-
-    // Aktivitäts-Status prüfen (Inaktivität nach Config::ACTIVITY_DURATION führt zu Screensaver)
-    bool active = (now - chatManager.getLastActivityTime()) < Config::ACTIVITY_DURATION;
-
-    if (!active) {
-        static unsigned long lastUptimeUpdate = 0;
-        bool forceRedraw = false;
-
-        // Triggere sofortigen Neuaufbau beim Wechsel in den Screensaver-Modus
-        if (!oledScreensaverActive) {
-            oledScreensaverActive = true;
-            lastOledTick = now;
-            lastUptimeUpdate = now;
-            oled.clear();
-
-            // Bewege die Position des Textes zufällig / versetzt
-            ssCol = (ssCol + 15) % 45; // Max. Spalte, damit Text noch auf Bildschirm passt
-            ssPage = (ssPage + 1) % 5;  // Max. Page, damit vierzeiliger Text passt (ssPage + 3 <= 7)
-            forceRedraw = true;
-        }
-
-        // Position alle 5 Sekunden verschieben (um Einbrennen zu verhindern)
-        bool positionShifted = false;
-        if (now - lastOledTick >= 5000) {
-            lastOledTick = now;
-            oled.clear();
-            ssCol = (ssCol + 15) % 45;
-            ssPage = (ssPage + 1) % 5;
-            positionShifted = true;
-        }
-
-        // Uptime jede Sekunde aktualisieren
-        if (forceRedraw || positionShifted || (now - lastUptimeUpdate >= 1000)) {
-            lastUptimeUpdate = now;
-
-            // Berechne die Uptime des Geräts in h m s Format
-            unsigned long total_secs = now / 1000;
-            unsigned int hours = total_secs / 3600;
-            unsigned int minutes = (total_secs % 3600) / 60;
-            unsigned int seconds = total_secs % 60;
-            String runtimeStr = String(hours) + "h " + String(minutes) + "m " + String(seconds) + "s";
-
-            // Wenn neu gezeichnet wird oder die Position wechselt, zeichne alle 4 Zeilen
-            if (forceRedraw || positionShifted) {
-                oled.setCursor(ssCol, ssPage);
-                oled.print(Config::CHATNAME);
-                oled.setCursor(ssCol, ssPage + 1);
-                oled.print("10.10.10.1");
-            }
-
-            // Zeichne Uptime-Zeile (mit Leerzeichen gepolstert, um Reste zu überschreiben)
-            oled.setCursor(ssCol, ssPage + 2);
-            oled.print((runtimeStr + "   ").c_str());
-
-            // Zeichne Nodes-Zeile (mit Leerzeichen gepolstert, um Reste zu überschreiben)
-            String nodesStr = "Nodes: " + String(chatManager.getConnectedNodesCount());
-            oled.setCursor(ssCol, ssPage + 3);
-            oled.print((nodesStr + "   ").c_str());
-        }
-        return;
-    }
-
-    static bool showUserList = false;
-
-    // Wenn Aktivität erkannt wurde, aber der Screensaver noch aktiv war
-    if (oledScreensaverActive) {
-        oledScreensaverActive = false;
-        oled.clear();
-        lastOledTick = 0; // Sofortiges Neuzeichnen triggern
-        showUserList = false; // Zurücksetzen auf die Nachrichten- bzw. AP-Info-Ansicht
-    }
-
-    // Ticker-Rotation / Bildschirm-Wechsel alle 5 Sekunden
-    if (now - lastOledTick >= 5000 || lastOledTick == 0) {
-        lastOledTick = now;
-        oled.clear();
-        drawHeader();
-
-        if (showUserList) {
-            // Online-Nutzerliste anzeigen
-            String usersStr = chatManager.getOnlineUsersString();
-            oled.printWrapped(usersStr, 2, 6);
-        } else {
-            size_t tickerMsgCount = chatManager.getTickerMessageCount();
-            if (tickerMsgCount == 0) {
-                // Standby/Boot-Bildschirm bei fehlenden Nachrichten
-                oled.setCursor(0, 2);
-                oled.print("AP:  ");
-                oled.print(Config::CHATNAME);
-
-                oled.setCursor(0, 4);
-                oled.print("IP:  10.10.10.1");
-
-                oled.setCursor(0, 6);
-                oled.print("Warte auf Chat...");
-            } else {
-                // Die letzten 3 eindeutigen Nachrichten zusammen anzeigen (älteste oben, neueste unten)
-                String msgStr = "";
-                for (size_t i = 0; i < tickerMsgCount; ++i) {
-                    msgStr += chatManager.getLastTickerMessage(tickerMsgCount - 1 - i);
-                    if (i < tickerMsgCount - 1) {
-                        msgStr += "\n";
-                    }
-                }
-                oled.printWrapped(msgStr, 1, 7);
-            }
-        }
-
-        // Zustand umschalten für den nächsten Wechsel
-        showUserList = !showUserList;
-    }
-}
-
 // ==================== SETUP ====================
 void setup() {
-    // Serieller Monitor für Debug-Ausgaben initialisieren
     Serial.begin(115200);
     Serial.println("\n====================================");
-    Serial.println("PopupChat wird gestartet...");
+    Serial.println("CardijnChat wird gestartet...");
     Serial.println("====================================");
 
-    // Initialisierung des Hardware-Zufallszahlengenerators
+    // Initialisierung des Zufallszahlengenerators
     randomSeed(analogRead(0));
 
-    // OLED-Display-Schnittstelle initialisieren
-    if (Config::ENABLE_OLED) {
-        Serial.println("Initialisiere SSD1306 OLED-Display...");
-        if (oled.begin()) {
-            Serial.println("OLED-Display erfolgreich gestartet!");
-        } else {
-            Serial.println("OLED-Display konnte nicht initialisiert werden!");
-        }
-    }
-
-    // Aktivitäts-LED konfigurieren
-    pinMode(Config::ACTIVITY_LED, OUTPUT);
-    digitalWrite(Config::ACTIVITY_LED, Config::ACTIVITY_REVERSE ? HIGH : LOW);
-
-    // WLAN-Access Point (AP) konfigurieren
+    // WLAN-Access Point (AP) konfigurieren auf festem Kanal
     Serial.print("Konfiguriere Access Point: ");
     Serial.println(Config::CHATNAME);
 
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig(apIP, apIP, subnet);
-    // Start AP on fixed channel so ESP-NOW matches the frequency
     WiFi.softAP(Config::CHATNAME, nullptr, Config::MESH_CHANNEL);
 
     Serial.print("AP IP-Adresse: ");
@@ -243,7 +95,7 @@ void setup() {
     // Web-Routen registrieren
     server.on("/", HTTP_GET, handleServeIndex);
 
-    // Explizite Captive Portal Endpoints für automatische Erkennung auf allen Betriebssystemen
+    // Captive Portal Endpunkte für automatische OS-Erkennung
     server.on("/generate_204", HTTP_GET, handleRedirect);            // Android
     server.on("/hotspot-detect.html", HTTP_GET, handleRedirect);     // Apple iOS/macOS
     server.on("/library/test/success.html", HTTP_GET, handleRedirect); // Apple iOS/macOS
@@ -253,16 +105,10 @@ void setup() {
 
     // Fallback/Captive-Portal Handler für unbekannte Routen
     server.onNotFound([](AsyncWebServerRequest *request) {
-        // Überprüfe den Host-Header. Wenn er nicht mit unserer IP übereinstimmt,
-        // leiten wir den Browser per 302-Redirect direkt auf unsere IP-Adresse um.
-        // Dies ändert die Adresszeile des Browsers auf 10.10.10.1, sodass der
-        // WebSocket-Client im Browser direkt dorthin verbinden kann!
         String hostHeader = request->host();
         if (hostHeader != "10.10.10.1" && hostHeader != "10.10.10.1:80") {
             handleRedirect(request);
         } else {
-            // Falls der Host bereits 10.10.10.1 ist, aber die Route unbekannt war,
-            // liefern wir das Frontend aus, um unschöne 404-Fehler zu vermeiden.
             handleServeIndex(request);
         }
     });
@@ -277,30 +123,26 @@ void setup() {
 
 // ==================== LOOP ====================
 void loop() {
-    // DNS-Server-Pakete verarbeiten
+    // DNS-Pakete verarbeiten
     dnsServer.process();
 
-    // WebSocket-Ressourcen regelmäßig aufräumen
-    chatManager.cleanup();
+    // Zentrales Update für alle Sub-Manager (WebSocket, Mesh, OLED, LED)
+    chatManager.update();
 
-    // OLED-Display und Newsticker-Rotation aktualisieren
     unsigned long currentMillis = millis();
-    updateOLEDDisplay(currentMillis);
 
-    // Nicht-blockierendes LED-Pulsing aktualisieren (höchste Priorität für die LED)
-    chatManager.updateLed(currentMillis);
-
-    // Standard LED Takt- und Aktivitätsanzeige (nur ausführen, wenn kein aktiver Puls vorliegt)
+    // Taktgesteuerter Hintergrund-LED-Status bei Standard-Aktivität (falls kein Puls läuft)
     if (!chatManager.isLedPulseActive()) {
         if (currentMillis - lastTick >= Config::TICK_INTERVAL) {
             lastTick = currentMillis;
 
-            // Prüfen, ob innerhalb des Aktivitäts-Fensters Interaktionen stattfanden
+            // LED leuchtet bei Aktivität, ist aus bei Inaktivität
             bool active = (currentMillis - chatManager.getLastActivityTime()) < Config::ACTIVITY_DURATION;
+            chatManager.updateLed(currentMillis); // Aktualisiert eventuelle späte Pulse
 
-            // LED-Status berechnen und setzen (Standard: leuchtet bei Aktivität, ist aus bei Inaktivität)
-            bool ledState = active ^ Config::ACTIVITY_REVERSE;
-            digitalWrite(Config::ACTIVITY_LED, ledState ? HIGH : LOW);
+            // Standard-Aktivitätslicht schalten
+            bool level = active ^ Config::ACTIVITY_REVERSE;
+            digitalWrite(Config::ACTIVITY_LED, level ? HIGH : LOW);
         }
     }
 }
