@@ -87,15 +87,35 @@ void updateOLEDDisplay(unsigned long now) {
     bool active = (now - chatManager.getLastActivityTime()) < Config::ACTIVITY_DURATION;
 
     if (!active) {
-        // Screensaver-Modus zur Vermeidung von Einbrenneffekten
-        if (!oledScreensaverActive || (now - lastOledTick >= 5000)) {
-            lastOledTick = now;
+        static unsigned long lastUptimeUpdate = 0;
+        bool forceRedraw = false;
+
+        // Triggere sofortigen Neuaufbau beim Wechsel in den Screensaver-Modus
+        if (!oledScreensaverActive) {
             oledScreensaverActive = true;
+            lastOledTick = now;
+            lastUptimeUpdate = now;
             oled.clear();
 
             // Bewege die Position des Textes zufällig / versetzt
             ssCol = (ssCol + 15) % 45; // Max. Spalte, damit Text noch auf Bildschirm passt
             ssPage = (ssPage + 1) % 6;  // Max. Page, damit dreizeiliger Text passt (ssPage + 2 <= 7)
+            forceRedraw = true;
+        }
+
+        // Position alle 5 Sekunden verschieben (um Einbrennen zu verhindern)
+        bool positionShifted = false;
+        if (now - lastOledTick >= 5000) {
+            lastOledTick = now;
+            oled.clear();
+            ssCol = (ssCol + 15) % 45;
+            ssPage = (ssPage + 1) % 6;
+            positionShifted = true;
+        }
+
+        // Uptime jede Sekunde aktualisieren
+        if (forceRedraw || positionShifted || (now - lastUptimeUpdate >= 1000)) {
+            lastUptimeUpdate = now;
 
             // Berechne die Uptime des Geräts in h m s Format
             unsigned long total_secs = now / 1000;
@@ -104,12 +124,17 @@ void updateOLEDDisplay(unsigned long now) {
             unsigned int seconds = total_secs % 60;
             String runtimeStr = String(hours) + "h " + String(minutes) + "m " + String(seconds) + "s";
 
-            oled.setCursor(ssCol, ssPage);
-            oled.print(Config::CHATNAME);
-            oled.setCursor(ssCol, ssPage + 1);
-            oled.print("10.10.10.1");
+            // Wenn neu gezeichnet wird oder die Position wechselt, zeichne alle 3 Zeilen
+            if (forceRedraw || positionShifted) {
+                oled.setCursor(ssCol, ssPage);
+                oled.print(Config::CHATNAME);
+                oled.setCursor(ssCol, ssPage + 1);
+                oled.print("10.10.10.1");
+            }
+
+            // Zeichne Uptime-Zeile (mit Leerzeichen gepolstert, um Reste zu überschreiben)
             oled.setCursor(ssCol, ssPage + 2);
-            oled.print(runtimeStr.c_str());
+            oled.print((runtimeStr + "   ").c_str());
         }
         return;
     }
