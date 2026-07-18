@@ -63,7 +63,7 @@ size_t ChatManager::getConnectedNodesCount() {
     uint32_t now = millis();
     size_t activeCount = 0;
     for (size_t i = 0; i < _remoteNodesCount; ++i) {
-        if (now - _remoteNodes[i].lastSeen < 1000) { // 1 second active timeout
+        if (now - _remoteNodes[i].lastSeen < 10000) { // 10 seconds active timeout to prevent flickering with 4s ping
             activeCount++;
         }
     }
@@ -99,6 +99,16 @@ void ChatManager::cleanup() {
     }
 
 #if ENABLE_MESH
+    // Periodische Bereinigung abgelaufener Remote-Knoten im Hauptloop-Cleanup,
+    // um sicherzustellen, dass die Liste immer auf dem neuesten Stand ist.
+    size_t writeIdx = 0;
+    for (size_t i = 0; i < _remoteNodesCount; ++i) {
+        if (now - _remoteNodes[i].lastSeen < 10000) { // 10 seconds active timeout
+            _remoteNodes[writeIdx++] = _remoteNodes[i];
+        }
+    }
+    _remoteNodesCount = writeIdx;
+
     if (now - _lastPingTime > 60000) { // Alle 60 Sekunden periodischer Sync-Request
         _lastPingTime = now;
         sendMeshBroadcast(2, ""); // SYNC_REQ senden
@@ -589,11 +599,11 @@ String ChatManager::getOnlineUsersString() {
 void ChatManager::updateOnlineUsersList() {
     uint32_t now = millis();
 
-    // 1. Behalte Remote-User, die noch nicht abgelaufen sind (jünger als 1 Sekunde)
+    // 1. Behalte Remote-User, die noch nicht abgelaufen sind (jünger als 10 Sekunden)
     size_t writeIdx = 0;
     for (size_t i = 0; i < _onlineUsersCount; ++i) {
         if (!_onlineUsers[i].isLocal) {
-            if (now - _onlineUsers[i].lastSeen < 1000) {
+            if (now - _onlineUsers[i].lastSeen < 10000) { // 10 seconds active timeout to prevent list flickering with 4s ping
                 _onlineUsers[writeIdx++] = _onlineUsers[i];
             }
         }
@@ -892,10 +902,10 @@ void ChatManager::registerRemoteNode(uint32_t nodeId) {
 
     uint32_t now = millis();
 
-    // 1. Clean up expired nodes (unseen for > 1 second)
+    // 1. Clean up expired nodes (unseen for > 10 seconds)
     size_t writeIdx = 0;
     for (size_t i = 0; i < _remoteNodesCount; ++i) {
-        if (now - _remoteNodes[i].lastSeen < 1000) {
+        if (now - _remoteNodes[i].lastSeen < 10000) {
             _remoteNodes[writeIdx++] = _remoteNodes[i];
         }
     }
