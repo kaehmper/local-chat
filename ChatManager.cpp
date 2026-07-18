@@ -46,7 +46,7 @@ const char* MessageRingBuffer::get(size_t index) const {
 // ==================== ChatManager ====================
 
 ChatManager::ChatManager()
-    : _ws("/ws"), _lastActivity(0), _tickerCount(0), _onlineUsersCount(0), _lastUserListBroadcastTime(0) {
+    : _ws("/ws"), _lastActivity(0), _tickerCount(0), _pulseTransitionsLeft(0), _nextTransitionTime(0), _pulseLedOn(false), _onlineUsersCount(0), _lastUserListBroadcastTime(0) {
 #if ENABLE_MESH
     _nodeId = 0;
     _lastPingTime = 0;
@@ -121,6 +121,45 @@ void ChatManager::cleanup() {
         }
     }
 #endif
+}
+
+void ChatManager::triggerMessagePulse() {
+    // 3 vollständige Blink-Zyklen (An-Aus-An-Aus-An-Aus). Jedes Blink-Segment dauert z.B. 120ms.
+    // Ein vollständiger Puls hat 6 Transitionen (Zustandswechsel):
+    // 1: LED AN, 2: LED AUS, 3: LED AN, 4: LED AUS, 5: LED AN, 6: LED AUS.
+    _pulseTransitionsLeft = 6;
+    _pulseLedOn = true;
+    _nextTransitionTime = millis();
+    updateLed(millis());
+}
+
+void ChatManager::triggerConnectPulse() {
+    // 1 kurzer Puls (An-Aus). Ein vollständiger Puls hat 2 Transitionen:
+    // 1: LED AN, 2: LED AUS.
+    _pulseTransitionsLeft = 2;
+    _pulseLedOn = true;
+    _nextTransitionTime = millis();
+    updateLed(millis());
+}
+
+void ChatManager::updateLed(unsigned long now) {
+    if (_pulseTransitionsLeft <= 0) return;
+
+    if (now >= _nextTransitionTime) {
+        // LED-Status berechnen basierend auf ACTIVITY_REVERSE (Low-Active / High-Active)
+        bool level = _pulseLedOn ^ Config::ACTIVITY_REVERSE;
+        digitalWrite(Config::ACTIVITY_LED, level ? HIGH : LOW);
+
+        // Nächsten Wechsel planen
+        _nextTransitionTime = now + 120; // 120ms pro Zustand
+        _pulseLedOn = !_pulseLedOn;
+        _pulseTransitionsLeft--;
+
+        if (_pulseTransitionsLeft <= 0) {
+            // Nach dem Ende die LED wieder in den Grundzustand (AUS) versetzen
+            digitalWrite(Config::ACTIVITY_LED, Config::ACTIVITY_REVERSE ? HIGH : LOW);
+        }
+    }
 }
 
 String ChatManager::escapeHtml(const String& s) {
@@ -347,6 +386,8 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
                     auto* otherSession = static_cast<ClientSession*>(otherClient->_tempObject);
                     if (otherSession && otherSession->uid.equalsIgnoreCase(requestedUid)) {
                         Serial.println("[Session] Schließe alten/doppelten Client für UID: " + requestedUid);
+                        // Vor dem Schließen entziehen wir die UID, damit sie sofort für die neue Verbindung frei ist
+                        otherSession->uid = "";
                         otherClient->close();
                     }
                 }
@@ -371,6 +412,9 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
         addOrUpdateUser(session->uid.c_str(), true);
         broadcastUserList();
 
+        // Neuen User Connect mit einem kurzen Puls anzeigen
+        triggerConnectPulse();
+
         sendRoomInit(client);
     }
     else if (type == "ttt") {
@@ -388,6 +432,9 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
             _openRoom.add(formattedMsg);
             addTickerMessage(formattedMsg);
             broadcastMessage(formattedMsg);
+
+            // Trigger 3 LED-Pulse bei einer neuen Chat-Nachricht
+            triggerMessagePulse();
 
 #if ENABLE_MESH
             // Übertragungs-Eigenschaften für Echtzeit-Mesh-Nachrichten
@@ -722,6 +769,9 @@ void ChatManager::handleIncomingPacket(const MeshPacket& packet) {
             addTickerMessage(msgPayload);
             // Lokal an alle WebSocket-Clients senden
             broadcastMessage(msgPayload);
+
+            // Trigger 3 LED-Pulse bei einer neuen Chat-Nachricht (auch über Mesh empfangen)
+            triggerMessagePulse();
         }
     }
     else if (packet.packetType == 2) { // 2 = SYNC_REQ (Historie angefordert)

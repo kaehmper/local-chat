@@ -233,6 +233,12 @@ void SSD1306::printWrapped(const String& str, uint8_t startPage, uint8_t maxPage
     while (i < str.length() && currentPage < maxLimitPage) {
         char c = str[i];
 
+        // Windows Carriage Returns (\r) ignorieren
+        if (c == '\r') {
+            i++;
+            continue;
+        }
+
         // Expliziten Zeilenumbruch beachten
         if (c == '\n') {
             currentPage++;
@@ -263,7 +269,10 @@ void SSD1306::printWrapped(const String& str, uint8_t startPage, uint8_t maxPage
     // Restliche Pages dieser Box leeren, um alten Text rückstandslos zu überschreiben
     while (currentPage < maxLimitPage) {
         // Leere bis zum Ende der aktuellen Zeile
-        uint8_t remainingCols = 128 - (colCount * 6);
+        // Unterlaufschutz: colCount * 6 darf nicht größer als 128 sein
+        uint16_t colsWritten = colCount * 6;
+        if (colsWritten > 128) colsWritten = 128;
+        uint8_t remainingCols = 128 - colsWritten;
         if (remainingCols > 0) {
             uint8_t zeroBuffer[16];
             std::memset(zeroBuffer, 0, sizeof(zeroBuffer));

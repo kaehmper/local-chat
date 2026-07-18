@@ -287,15 +287,20 @@ void loop() {
     unsigned long currentMillis = millis();
     updateOLEDDisplay(currentMillis);
 
-    // LED Takt- und Aktivitätsanzeige
-    if (currentMillis - lastTick >= Config::TICK_INTERVAL) {
-        lastTick = currentMillis;
+    // Nicht-blockierendes LED-Pulsing aktualisieren (höchste Priorität für die LED)
+    chatManager.updateLed(currentMillis);
 
-        // Prüfen, ob innerhalb des Aktivitäts-Fensters Interaktionen stattfanden
-        bool active = (currentMillis - chatManager.getLastActivityTime()) < Config::ACTIVITY_DURATION;
+    // Standard LED Takt- und Aktivitätsanzeige (nur ausführen, wenn kein aktiver Puls vorliegt)
+    if (!chatManager.isLedPulseActive()) {
+        if (currentMillis - lastTick >= Config::TICK_INTERVAL) {
+            lastTick = currentMillis;
 
-        // LED-Status berechnen und setzen
-        bool ledState = active ^ Config::ACTIVITY_REVERSE;
-        digitalWrite(Config::ACTIVITY_LED, ledState ? HIGH : LOW);
+            // Prüfen, ob innerhalb des Aktivitäts-Fensters Interaktionen stattfanden
+            bool active = (currentMillis - chatManager.getLastActivityTime()) < Config::ACTIVITY_DURATION;
+
+            // LED-Status berechnen und setzen (Standard: leuchtet bei Aktivität, ist aus bei Inaktivität)
+            bool ledState = active ^ Config::ACTIVITY_REVERSE;
+            digitalWrite(Config::ACTIVITY_LED, ledState ? HIGH : LOW);
+        }
     }
 }
