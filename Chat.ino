@@ -99,7 +99,7 @@ void updateOLEDDisplay(unsigned long now) {
 
             // Bewege die Position des Textes zufällig / versetzt
             ssCol = (ssCol + 15) % 45; // Max. Spalte, damit Text noch auf Bildschirm passt
-            ssPage = (ssPage + 1) % 6;  // Max. Page, damit dreizeiliger Text passt (ssPage + 2 <= 7)
+            ssPage = (ssPage + 1) % 5;  // Max. Page, damit vierzeiliger Text passt (ssPage + 3 <= 7)
             forceRedraw = true;
         }
 
@@ -109,7 +109,7 @@ void updateOLEDDisplay(unsigned long now) {
             lastOledTick = now;
             oled.clear();
             ssCol = (ssCol + 15) % 45;
-            ssPage = (ssPage + 1) % 6;
+            ssPage = (ssPage + 1) % 5;
             positionShifted = true;
         }
 
@@ -124,7 +124,7 @@ void updateOLEDDisplay(unsigned long now) {
             unsigned int seconds = total_secs % 60;
             String runtimeStr = String(hours) + "h " + String(minutes) + "m " + String(seconds) + "s";
 
-            // Wenn neu gezeichnet wird oder die Position wechselt, zeichne alle 3 Zeilen
+            // Wenn neu gezeichnet wird oder die Position wechselt, zeichne alle 4 Zeilen
             if (forceRedraw || positionShifted) {
                 oled.setCursor(ssCol, ssPage);
                 oled.print(Config::CHATNAME);
@@ -135,6 +135,11 @@ void updateOLEDDisplay(unsigned long now) {
             // Zeichne Uptime-Zeile (mit Leerzeichen gepolstert, um Reste zu überschreiben)
             oled.setCursor(ssCol, ssPage + 2);
             oled.print((runtimeStr + "   ").c_str());
+
+            // Zeichne Nodes-Zeile (mit Leerzeichen gepolstert, um Reste zu überschreiben)
+            String nodesStr = "Nodes: " + String(chatManager.getConnectedNodesCount());
+            oled.setCursor(ssCol, ssPage + 3);
+            oled.print((nodesStr + "   ").c_str());
         }
         return;
     }
