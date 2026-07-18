@@ -558,9 +558,8 @@ void ChatManager::broadcastUserList() {
 
 #if ENABLE_MESH
     // Sende lokalen User-Ping an andere Mesh-Knoten (Type 5)
-    if (localUids.length() > 0) {
-        sendMeshBroadcast(5, localUids);
-    }
+    // Auch senden, wenn localUids leer ist, damit der Knoten im Mesh entdeckt und aktiv gehalten wird
+    sendMeshBroadcast(5, localUids);
 #endif
 
     // 2. Erstelle JSON mit ALLEN aktiven Online-Nutzern und sende es an alle WebSockets
