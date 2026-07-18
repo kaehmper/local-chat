@@ -53,6 +53,23 @@ ChatManager::ChatManager()
     _syncInProgress = false;
     _syncNextIndex = 0;
     _lastSyncMsgTime = 0;
+    _remoteNodesCount = 0;
+    std::memset(_remoteNodes, 0, sizeof(_remoteNodes));
+#endif
+}
+
+size_t ChatManager::getConnectedNodesCount() {
+#if ENABLE_MESH
+    uint32_t now = millis();
+    size_t activeCount = 0;
+    for (size_t i = 0; i < _remoteNodesCount; ++i) {
+        if (now - _remoteNodes[i].lastSeen < 15000) { // 15 seconds active timeout
+            activeCount++;
+        }
+    }
+    return activeCount;
+#else
+    return 0;
 #endif
 }
 
@@ -642,6 +659,8 @@ void ChatManager::handleIncomingPacket(const MeshPacket& packet) {
         return;
     }
 
+    registerRemoteNode(packet.senderId);
+
     _lastActivity = millis(); // System-Aktivität registrieren
 
     // Sicherstellen, dass das empfangene Nachrichtenfeld im Stack-Objekt nullterminiert ist (Verhinderung von Buffer Over-reads)
@@ -781,6 +800,37 @@ void ChatManager::handleMeshTttMessage(const String& payload) {
                 break;
             }
         }
+    }
+}
+
+void ChatManager::registerRemoteNode(uint32_t nodeId) {
+    if (nodeId == 0 || nodeId == _nodeId) return;
+
+    uint32_t now = millis();
+
+    // 1. Clean up expired nodes (unseen for > 15 seconds)
+    size_t writeIdx = 0;
+    for (size_t i = 0; i < _remoteNodesCount; ++i) {
+        if (now - _remoteNodes[i].lastSeen < 15000) {
+            _remoteNodes[writeIdx++] = _remoteNodes[i];
+        }
+    }
+    _remoteNodesCount = writeIdx;
+
+    // 2. Find and update the node, or add it if not found
+    bool found = false;
+    for (size_t i = 0; i < _remoteNodesCount; ++i) {
+        if (_remoteNodes[i].nodeId == nodeId) {
+            _remoteNodes[i].lastSeen = now;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found && _remoteNodesCount < MAX_REMOTE_NODES) {
+        _remoteNodes[_remoteNodesCount].nodeId = nodeId;
+        _remoteNodes[_remoteNodesCount].lastSeen = now;
+        _remoteNodesCount++;
     }
 }
 

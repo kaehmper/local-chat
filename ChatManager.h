@@ -115,6 +115,11 @@ public:
      */
     String getOnlineUsersString();
 
+    /**
+     * @brief Gibt die Anzahl der verbundenen Remote-Mesh-Knoten zurück.
+     */
+    size_t getConnectedNodesCount();
+
 private:
     // WebSocket-Objekt für Echtzeitkommunikation
     AsyncWebSocket _ws;
@@ -176,6 +181,16 @@ private:
     size_t _syncNextIndex;
     uint32_t _lastSyncMsgTime;
 
+    // Active nodes tracking
+    struct ActiveNode {
+        uint32_t nodeId;
+        uint32_t lastSeen;
+    };
+    static constexpr size_t MAX_REMOTE_NODES = 32;
+    ActiveNode _remoteNodes[MAX_REMOTE_NODES];
+    size_t _remoteNodesCount;
+
+    void registerRemoteNode(uint32_t nodeId);
     void initMesh();
     void sendMeshBroadcast(uint8_t packetType, const String& msg);
     void handleIncomingPacket(const MeshPacket& packet);
