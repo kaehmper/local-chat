@@ -10,6 +10,10 @@ struct ClientSession {
 // Globaler externer Zeiger auf ChatManager (für statische ESP-NOW Callbacks)
 extern ChatManager chatManager;
 
+// Hilfsfunktionen zur versionsunabhängigen Ermittlung des Zeigers auf einen Client
+static inline AsyncWebSocketClient* getClientPtr(AsyncWebSocketClient* p) { return p; }
+static inline AsyncWebSocketClient* getClientPtr(AsyncWebSocketClient& r) { return &r; }
+
 // ==================== MessageRingBuffer ====================
 
 MessageRingBuffer::MessageRingBuffer() : _start(0), _count(0) {
@@ -403,10 +407,6 @@ void ChatManager::sendRoomInit(AsyncWebSocketClient* client) {
 
     client->text(json);
 }
-
-// Hilfsfunktionen zur versionsunabhängigen Ermittlung des Zeigers auf einen Client
-static inline AsyncWebSocketClient* getClientPtr(AsyncWebSocketClient* p) { return p; }
-static inline AsyncWebSocketClient* getClientPtr(AsyncWebSocketClient& r) { return &r; }
 
 void ChatManager::broadcastMessage(const String& msg) {
     String escapedMsg = escapeJsonStringValue(msg);
