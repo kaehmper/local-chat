@@ -31,7 +31,12 @@ void LedManager::update(unsigned long now) {
         bool level = _pulseLedOn ^ Config::ACTIVITY_REVERSE;
         digitalWrite(Config::ACTIVITY_LED, level ? HIGH : LOW);
 
-        _nextTransitionTime = now + _currentTransitionDuration;
+        // Bestimme die Dauer des aktuellen Zustands:
+        // Wenn die LED an ist (aktiviert wurde), bleibt sie für die Puls-Dauer an.
+        // Wenn die LED aus ist (deaktiviert wurde), bleibt sie für die Pause-Dauer aus.
+        uint32_t duration = _pulseLedOn ? _currentTransitionDuration : Config::PULSE_PAUSE_DURATION_MS;
+
+        _nextTransitionTime = now + duration;
         _pulseLedOn = !_pulseLedOn;
         _pulseTransitionsLeft--;
 
