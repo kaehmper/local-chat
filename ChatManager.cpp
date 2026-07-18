@@ -63,7 +63,7 @@ size_t ChatManager::getConnectedNodesCount() {
     uint32_t now = millis();
     size_t activeCount = 0;
     for (size_t i = 0; i < _remoteNodesCount; ++i) {
-        if (now - _remoteNodes[i].lastSeen < 15000) { // 15 seconds active timeout
+        if (now - _remoteNodes[i].lastSeen < 1000) { // 1 second active timeout
             activeCount++;
         }
     }
@@ -153,9 +153,9 @@ bool ChatManager::isUidInUse(const String& uid) {
         }
     }
 
-    // 2. Bekannte Online-Nutzerliste (auch remote) prüfen
+    // 2. Nur remote Online-Nutzer prüfen (lokale Online-Nutzer sind über WebSocket-Clients abgedeckt)
     for (size_t i = 0; i < _onlineUsersCount; ++i) {
-        if (uid.equalsIgnoreCase(_onlineUsers[i].uid)) {
+        if (!_onlineUsers[i].isLocal && uid.equalsIgnoreCase(_onlineUsers[i].uid)) {
             return true;
         }
     }
@@ -334,6 +334,21 @@ void ChatManager::handleWsTextMessage(AsyncWebSocketClient* client, const String
                 if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))) {
                     isValid = false;
                     break;
+                }
+            }
+        }
+
+        if (isValid) {
+            // Falls eine andere WebSocket-Verbindung diese UID besitzt, schließen wir sie,
+            // damit der Benutzer sich nahtlos wieder verbinden kann (Reconnection).
+            for (auto&& client_item : _ws.getClients()) {
+                AsyncWebSocketClient* otherClient = getClientPtr(client_item);
+                if (otherClient && otherClient != client && otherClient->status() == WS_CONNECTED) {
+                    auto* otherSession = static_cast<ClientSession*>(otherClient->_tempObject);
+                    if (otherSession && otherSession->uid.equalsIgnoreCase(requestedUid)) {
+                        Serial.println("[Session] Schließe alten/doppelten Client für UID: " + requestedUid);
+                        otherClient->close();
+                    }
                 }
             }
         }
@@ -527,11 +542,11 @@ String ChatManager::getOnlineUsersString() {
 void ChatManager::updateOnlineUsersList() {
     uint32_t now = millis();
 
-    // 1. Behalte Remote-User, die noch nicht abgelaufen sind (jünger als 15 Sekunden)
+    // 1. Behalte Remote-User, die noch nicht abgelaufen sind (jünger als 1 Sekunde)
     size_t writeIdx = 0;
     for (size_t i = 0; i < _onlineUsersCount; ++i) {
         if (!_onlineUsers[i].isLocal) {
-            if (now - _onlineUsers[i].lastSeen < 15000) {
+            if (now - _onlineUsers[i].lastSeen < 1000) {
                 _onlineUsers[writeIdx++] = _onlineUsers[i];
             }
         }
@@ -677,7 +692,10 @@ void ChatManager::handleIncomingPacket(const MeshPacket& packet) {
 
     registerRemoteNode(packet.senderId);
 
-    _lastActivity = millis(); // System-Aktivität registrieren
+    // Registriere System-Aktivität nur bei tatsächlichen Benutzeraktionen (Chat-Nachricht oder Tic-Tac-Toe)
+    if (packet.packetType == 1 || packet.packetType == 6) {
+        _lastActivity = millis();
+    }
 
     // Sicherstellen, dass das empfangene Nachrichtenfeld im Stack-Objekt nullterminiert ist (Verhinderung von Buffer Over-reads)
     char safeMessage[sizeof(packet.message)];
@@ -824,10 +842,10 @@ void ChatManager::registerRemoteNode(uint32_t nodeId) {
 
     uint32_t now = millis();
 
-    // 1. Clean up expired nodes (unseen for > 15 seconds)
+    // 1. Clean up expired nodes (unseen for > 1 second)
     size_t writeIdx = 0;
     for (size_t i = 0; i < _remoteNodesCount; ++i) {
-        if (now - _remoteNodes[i].lastSeen < 15000) {
+        if (now - _remoteNodes[i].lastSeen < 1000) {
             _remoteNodes[writeIdx++] = _remoteNodes[i];
         }
     }
