@@ -22,8 +22,6 @@ ChatManager chatManager;
 IPAddress apIP(10, 10, 10, 1);
 IPAddress subnet(255, 255, 255, 0);
 
-unsigned long lastTick = 0;
-
 // ---------- Webserver Handler ----------
 void handleRedirect(AsyncWebServerRequest *request) {
     chatManager.registerActivity();
@@ -132,21 +130,4 @@ void loop() {
 
     // Zentrales Update für alle Sub-Manager (WebSocket, Mesh, OLED, LED)
     chatManager.update();
-
-    unsigned long currentMillis = millis();
-
-    // Taktgesteuerter Hintergrund-LED-Status bei Standard-Aktivität (falls kein Puls läuft)
-    if (!chatManager.isLedPulseActive()) {
-        if (currentMillis - lastTick >= Config::TICK_INTERVAL) {
-            lastTick = currentMillis;
-
-            // LED leuchtet bei Aktivität, ist aus bei Inaktivität
-            bool active = (currentMillis - chatManager.getLastActivityTime()) < Config::ACTIVITY_DURATION;
-            chatManager.updateLed(currentMillis); // Aktualisiert eventuelle späte Pulse
-
-            // Standard-Aktivitätslicht schalten
-            bool level = active ^ Config::ACTIVITY_REVERSE;
-            digitalWrite(Config::ACTIVITY_LED, level ? HIGH : LOW);
-        }
-    }
 }
