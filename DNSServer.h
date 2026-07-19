@@ -33,11 +33,32 @@ public:
      */
     void process();
 
+    /**
+     * @brief Ruft die gesendeten Bytes seit dem letzten Aufruf ab und setzt den Zähler zurück.
+     */
+    uint32_t getAndResetBytesSent() {
+        uint32_t bytes = _bytesSent;
+        _bytesSent = 0;
+        return bytes;
+    }
+
+    /**
+     * @brief Ruft die empfangenen Bytes seit dem letzten Aufruf ab und setzt den Zähler zurück.
+     */
+    uint32_t getAndResetBytesReceived() {
+        uint32_t bytes = _bytesReceived;
+        _bytesReceived = 0;
+        return bytes;
+    }
+
 private:
     WiFiUDP _udp;
     IPAddress _resolvedIP;
     uint16_t _port;
     bool _running;
+
+    uint32_t _bytesSent;
+    uint32_t _bytesReceived;
 
     // DNS Header Flags & Offsets
     static constexpr size_t DNS_PACKET_MAX_SIZE = 512;

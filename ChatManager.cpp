@@ -1,5 +1,8 @@
 #include "ChatManager.h"
+#include "DNSServer.h"
 #include <cstring>
+
+extern CustomDNSServer dnsServer;
 
 // ---------- ClientSession Struktur ----------
 struct ClientSession {
@@ -16,12 +19,18 @@ ChatManager::ChatManager()
       _lastActivity(0),
       _tickerCount(0),
       _onlineUsersCount(0),
-      _lastUserListBroadcastTime(0) {
+      _lastUserListBroadcastTime(0),
+      _bytesSentAccumulator(0),
+      _bytesReceivedAccumulator(0),
+      _lastBandwidthCalcTime(0),
+      _currentUpKbps(0.0),
+      _currentDownKbps(0.0) {
     std::memset(_onlineUsers, 0, sizeof(_onlineUsers));
 }
 
 void ChatManager::begin(AsyncWebServer* server) {
     _lastActivity = millis();
+    _lastBandwidthCalcTime = millis();
 
     // LED initialisieren
     _ledManager.begin();
@@ -50,6 +59,23 @@ void ChatManager::update() {
     _ws.cleanupClients();
 
     uint32_t now = millis();
+
+    // Pull real-time counts from mesh manager and dns server
+    _bytesSentAccumulator += _meshManager.getAndResetBytesSent();
+    _bytesReceivedAccumulator += _meshManager.getAndResetBytesReceived();
+    _bytesSentAccumulator += dnsServer.getAndResetBytesSent();
+    _bytesReceivedAccumulator += dnsServer.getAndResetBytesReceived();
+
+    // Calculate bandwidth rate (UP / DOWN kbps) over the elapsed period
+    uint32_t elapsed = now - _lastBandwidthCalcTime;
+    if (elapsed >= 1000) {
+        _currentUpKbps = (_bytesSentAccumulator * 8.0) / elapsed;
+        _currentDownKbps = (_bytesReceivedAccumulator * 8.0) / elapsed;
+
+        _bytesSentAccumulator = 0;
+        _bytesReceivedAccumulator = 0;
+        _lastBandwidthCalcTime = now;
+    }
 
     // Periodischer User-Listen Broadcast (alle 4 Sekunden)
     if (now - _lastUserListBroadcastTime > 4000) {
@@ -82,7 +108,9 @@ void ChatManager::update() {
             std::sprintf(buf, "%08X", _meshManager.getRemoteNodeId(idx));
             return String(buf);
         },
-        [this](size_t idx) { return _meshManager.getRemoteNodeRssi(idx); }
+        [this](size_t idx) { return _meshManager.getRemoteNodeRssi(idx); },
+        _currentUpKbps,
+        _currentDownKbps
     );
 
     // Nicht-blockierendes LED-Blinken aktualisieren
@@ -172,6 +200,7 @@ void ChatManager::handleMeshTttMsg(const String& payload) {
                 auto* s = static_cast<ClientSession*>(localClient->_tempObject);
                 if (s && s->uid == targetUid) {
                     localClient->text(payload);
+                    countBytesSent(payload.length());
                     break;
                 }
             }
@@ -344,6 +373,8 @@ void ChatManager::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client
                     break;
                 }
 
+                countBytesReceived(len);
+
                 auto* session = static_cast<ClientSession*>(client->_tempObject);
                 if (session) {
                     if (info->index == 0) {
@@ -467,6 +498,7 @@ void ChatManager::sendRoomInit(AsyncWebSocketClient* client) {
     json += "]}";
 
     client->text(json);
+    countBytesSent(json.length());
 }
 
 void ChatManager::broadcastMessage(const String& msg) {
@@ -486,6 +518,7 @@ void ChatManager::broadcastMessage(const String& msg) {
             auto* session = static_cast<ClientSession*>(client->_tempObject);
             if (session) {
                 client->text(json);
+                countBytesSent(json.length());
             }
         }
     }
@@ -614,6 +647,7 @@ void ChatManager::broadcastUserList() {
             auto* session = static_cast<ClientSession*>(client->_tempObject);
             if (session) {
                 client->text(json);
+                countBytesSent(json.length());
             }
         }
     }
@@ -642,6 +676,7 @@ void ChatManager::handleTttMessage(AsyncWebSocketClient* client, const String& m
             auto* s = static_cast<ClientSession*>(localClient->_tempObject);
             if (s && s->uid == targetUid) {
                 localClient->text(secureMsg);
+                countBytesSent(secureMsg.length());
                 foundLocally = true;
                 break;
             }

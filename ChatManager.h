@@ -83,6 +83,11 @@ public:
     int getRemoteNodeRssi(size_t index) { return _meshManager.getRemoteNodeRssi(index); }
     int getStrongestNodeRssi() { return _meshManager.getStrongestNodeRssi(); }
 
+    void countBytesSent(size_t bytes) { _bytesSentAccumulator += bytes; }
+    void countBytesReceived(size_t bytes) { _bytesReceivedAccumulator += bytes; }
+    double getCurrentUpKbps() const { return _currentUpKbps; }
+    double getCurrentDownKbps() const { return _currentDownKbps; }
+
 private:
     AsyncWebSocket _ws;
     MessageRingBuffer _openRoom;
@@ -91,6 +96,12 @@ private:
     MeshManager _meshManager;
 
     uint32_t _lastActivity;
+
+    uint32_t _bytesSentAccumulator;
+    uint32_t _bytesReceivedAccumulator;
+    uint32_t _lastBandwidthCalcTime;
+    double _currentUpKbps;
+    double _currentDownKbps;
 
     // Ticker-Puffer für die letzten drei eindeutigen Nachrichten
     String _tickerMessages[3];

@@ -90,6 +90,24 @@ public:
      */
     int getStrongestNodeRssi();
 
+    /**
+     * @brief Ruft die gesendeten Bytes seit dem letzten Aufruf ab und setzt den Zähler zurück.
+     */
+    uint32_t getAndResetBytesSent() {
+        uint32_t bytes = _bytesSent;
+        _bytesSent = 0;
+        return bytes;
+    }
+
+    /**
+     * @brief Ruft die empfangenen Bytes seit dem letzten Aufruf ab und setzt den Zähler zurück.
+     */
+    uint32_t getAndResetBytesReceived() {
+        uint32_t bytes = _bytesReceived;
+        _bytesReceived = 0;
+        return bytes;
+    }
+
 #if ENABLE_MESH
     // Statischer Callback für ESP-NOW Empfang
     static void onEspNowRecv(uint8_t* mac, uint8_t* incomingData, uint8_t len);
@@ -119,6 +137,9 @@ private:
     static constexpr size_t MAX_REMOTE_NODES = 32;
     ActiveNode _remoteNodes[MAX_REMOTE_NODES];
     size_t _remoteNodesCount;
+
+    uint32_t _bytesSent;
+    uint32_t _bytesReceived;
 
     void handleIncomingPacket(const uint8_t* data, size_t len);
     void handleSyncRequest(uint32_t targetNodeId);
