@@ -79,12 +79,6 @@ public:
      */
     size_t getConnectedNodesCount() { return _meshManager.getConnectedNodesCount(); }
 
-    /**
-     * @brief Hilfsmethoden für LED-Schnittstellen (für Abwärtskompatibilität).
-     */
-    bool isLedPulseActive() const { return _ledManager.isPulseActive(); }
-    void updateLed(unsigned long now) { _ledManager.update(now); }
-
 private:
     AsyncWebSocket _ws;
     MessageRingBuffer _openRoom;

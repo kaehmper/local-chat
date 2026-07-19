@@ -40,12 +40,6 @@ public:
      */
     bool isPulseActive() const { return _pulseTransitionsLeft > 0; }
 
-    /**
-     * @brief Setzt den standardmäßigen LED-Zustand (wenn kein Puls aktiv ist).
-     * @param state true für "aktiv/leuchtend" (berücksichtigt intern die Polarität).
-     */
-    void setStandardState(bool state);
-
 private:
     int _pulseTransitionsLeft;         // Verbleibende LED-Zustandswechsel
     unsigned long _nextTransitionTime; // Zeitpunkt des nächsten Wechsels in ms

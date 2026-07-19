@@ -25,7 +25,9 @@ void LedManager::triggerConnectPulse() {
 }
 
 void LedManager::update(unsigned long now) {
-    if (_pulseTransitionsLeft <= 0) return;
+    if (_pulseTransitionsLeft <= 0) {
+        return;
+    }
 
     if (now >= _nextTransitionTime) {
         bool level = _pulseLedOn ^ Config::ACTIVITY_REVERSE;
@@ -45,10 +47,4 @@ void LedManager::update(unsigned long now) {
             digitalWrite(Config::ACTIVITY_LED, Config::ACTIVITY_REVERSE ? HIGH : LOW);
         }
     }
-}
-
-void LedManager::setStandardState(bool state) {
-    if (isPulseActive()) return;
-    bool ledLevel = state ^ Config::ACTIVITY_REVERSE;
-    digitalWrite(Config::ACTIVITY_LED, ledLevel ? HIGH : LOW);
 }
