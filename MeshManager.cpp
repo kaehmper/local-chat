@@ -56,10 +56,10 @@ void MeshManager::update(const std::function<String(size_t)>& getMessageByIndex,
     uint32_t now = millis();
 
 #if ENABLE_MESH
-    // Periodische Bereinigung abgelaufener Remote-Knoten (> 10 Sekunden)
+    // Periodische Bereinigung abgelaufener Remote-Knoten (> 5 Sekunden)
     size_t writeIdx = 0;
     for (size_t i = 0; i < _remoteNodesCount; ++i) {
-        if (now - _remoteNodes[i].lastSeen < 10000) {
+        if (now - _remoteNodes[i].lastSeen < 5000) {
             _remoteNodes[writeIdx++] = _remoteNodes[i];
         }
     }
@@ -106,7 +106,7 @@ size_t MeshManager::getConnectedNodesCount() {
     uint32_t now = millis();
     size_t activeCount = 0;
     for (size_t i = 0; i < _remoteNodesCount; ++i) {
-        if (now - _remoteNodes[i].lastSeen < 10000) {
+        if (now - _remoteNodes[i].lastSeen < 5000) {
             activeCount++;
         }
     }
@@ -121,7 +121,7 @@ void MeshManager::registerRemoteNode(uint32_t nodeId) {
     // 1. Abgelaufene Knoten bereinigen
     size_t writeIdx = 0;
     for (size_t i = 0; i < _remoteNodesCount; ++i) {
-        if (now - _remoteNodes[i].lastSeen < 10000) {
+        if (now - _remoteNodes[i].lastSeen < 5000) {
             _remoteNodes[writeIdx++] = _remoteNodes[i];
         }
     }

@@ -323,6 +323,8 @@ void ChatManager::onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client
                 delete session;
                 client->_tempObject = nullptr;
             }
+            // Sofortige Aktualisierung und Verteilung der Benutzerliste bei Verbindungsabbruch
+            broadcastUserList();
             break;
         }
         case WS_EVT_DATA: {
@@ -548,11 +550,11 @@ String ChatManager::getOnlineUsersString() {
 void ChatManager::updateOnlineUsersList() {
     uint32_t now = millis();
 
-    // 1. Behalte valide Remote-Benutzer, die jünger als 10 Sekunden sind
+    // 1. Behalte valide Remote-Benutzer, die jünger als 5 Sekunden sind (Timeout von 10s auf 5s reduziert)
     size_t writeIdx = 0;
     for (size_t i = 0; i < _onlineUsersCount; ++i) {
         if (!_onlineUsers[i].isLocal) {
-            if (now - _onlineUsers[i].lastSeen < 10000) {
+            if (now - _onlineUsers[i].lastSeen < 5000) {
                 _onlineUsers[writeIdx++] = _onlineUsers[i];
             }
         }
