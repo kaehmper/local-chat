@@ -271,6 +271,27 @@ void OledManager::drawNetworkScreen(size_t connectedNodesCount, int strongestRss
     }
 }
 
+void OledManager::drawCurrentView(unsigned long now,
+                                  size_t onlineUsersCount,
+                                  const std::function<String(size_t)>& getUserUid,
+                                  const std::function<bool(size_t)>& isUserLocal,
+                                  size_t roomMsgCount,
+                                  const std::function<String(size_t)>& getRoomMsg,
+                                  size_t connectedNodesCount,
+                                  int strongestRssi,
+                                  double upKbps,
+                                  double downKbps) {
+    if (_currentView == VIEW_MESSAGES) {
+        drawMessagesScreen(roomMsgCount, getRoomMsg);
+    } else if (_currentView == VIEW_USERS) {
+        drawUsersScreen(onlineUsersCount, getUserUid, isUserLocal);
+    } else if (_currentView == VIEW_SYSTEM) {
+        drawSystemScreen(now);
+    } else if (_currentView == VIEW_NETWORK) {
+        drawNetworkScreen(connectedNodesCount, strongestRssi, upKbps, downKbps);
+    }
+}
+
 void OledManager::update(unsigned long now,
                          bool systemActive,
                          size_t onlineUsersCount,
@@ -326,15 +347,7 @@ void OledManager::update(unsigned long now,
             _oled.clear();
             _lastOledTick = now;
             // Draw current active view immediately
-            if (_currentView == VIEW_MESSAGES) {
-                drawMessagesScreen(roomMsgCount, getRoomMsg);
-            } else if (_currentView == VIEW_USERS) {
-                drawUsersScreen(onlineUsersCount, getUserUid, isUserLocal);
-            } else if (_currentView == VIEW_SYSTEM) {
-                drawSystemScreen(now);
-            } else if (_currentView == VIEW_NETWORK) {
-                drawNetworkScreen(connectedNodesCount, strongestRssi, upKbps, downKbps);
-            }
+            drawCurrentView(now, onlineUsersCount, getUserUid, isUserLocal, roomMsgCount, getRoomMsg, connectedNodesCount, strongestRssi, upKbps, downKbps);
             return;
         }
 
@@ -391,15 +404,7 @@ void OledManager::update(unsigned long now,
             // Draw manual view every 1000 ms or on button press
             if (forceRedraw || (now - _lastOledTick >= 1000) || _lastOledTick == 0) {
                 _lastOledTick = now;
-                if (_currentView == VIEW_MESSAGES) {
-                    drawMessagesScreen(roomMsgCount, getRoomMsg);
-                } else if (_currentView == VIEW_USERS) {
-                    drawUsersScreen(onlineUsersCount, getUserUid, isUserLocal);
-                } else if (_currentView == VIEW_SYSTEM) {
-                    drawSystemScreen(now);
-                } else if (_currentView == VIEW_NETWORK) {
-                    drawNetworkScreen(connectedNodesCount, strongestRssi, upKbps, downKbps);
-                }
+                drawCurrentView(now, onlineUsersCount, getUserUid, isUserLocal, roomMsgCount, getRoomMsg, connectedNodesCount, strongestRssi, upKbps, downKbps);
             }
             return;
         }
@@ -410,15 +415,6 @@ void OledManager::update(unsigned long now,
         _lastOledTick = now;
         _oled.clear();
         _currentView = static_cast<ScreenView>((_currentView + 1) % 4);
-
-        if (_currentView == VIEW_MESSAGES) {
-            drawMessagesScreen(roomMsgCount, getRoomMsg);
-        } else if (_currentView == VIEW_USERS) {
-            drawUsersScreen(onlineUsersCount, getUserUid, isUserLocal);
-        } else if (_currentView == VIEW_SYSTEM) {
-            drawSystemScreen(now);
-        } else if (_currentView == VIEW_NETWORK) {
-            drawNetworkScreen(connectedNodesCount, strongestRssi, upKbps, downKbps);
-        }
+        drawCurrentView(now, onlineUsersCount, getUserUid, isUserLocal, roomMsgCount, getRoomMsg, connectedNodesCount, strongestRssi, upKbps, downKbps);
     }
 }
