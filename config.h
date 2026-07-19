@@ -35,10 +35,11 @@ constexpr uint32_t ACTIVITY_DURATION = 20000;               ///< Inaktivitäts-T
 constexpr uint32_t TICK_INTERVAL     = 1000;                ///< Takt-Intervall für die LED-Steuerung in ms
 
 // LED Puls-Konfigurationen
-constexpr uint32_t MSG_PULSE_DURATION_MS = 20;              ///< Dauer pro Zustand (an/aus) bei Nachrichteneingang
+constexpr uint32_t MSG_PULSE_DURATION_MS = 20;              ///< Dauer für den AN-Zustand bei Nachrichteneingang in ms
 constexpr uint32_t MSG_PULSE_COUNT       = 4;               ///< Anzahl der vollständigen Blinkzyklen bei Nachrichteneingang
-constexpr uint32_t CONNECT_PULSE_DURATION_MS = 40;          ///< Dauer pro Zustand (an/aus) bei Connect
+constexpr uint32_t CONNECT_PULSE_DURATION_MS = 40;          ///< Dauer für den AN-Zustand bei Connect in ms
 constexpr uint32_t CONNECT_PULSE_COUNT       = 2;           ///< Anzahl der vollständigen Blinkzyklen bei Connect
+constexpr uint32_t PULSE_PAUSE_DURATION_MS   = 50;          ///< Pause zwischen Blinks (AUS-Zustand) in ms
 
 // ---------- OLED-Display (SSD1306) ----------
 constexpr bool ENABLE_OLED       = true;                    ///< Setzen Sie dies auf false, um das Display zu deaktivieren
