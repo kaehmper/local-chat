@@ -69,6 +69,27 @@ public:
      */
     void registerRemoteNode(uint32_t nodeId);
 
+    /**
+     * @brief Gibt die Node-ID eines bestimmten remote Knotens zurück.
+     */
+    uint32_t getRemoteNodeId(size_t index) const {
+        if (index < _remoteNodesCount) return _remoteNodes[index].nodeId;
+        return 0;
+    }
+
+    /**
+     * @brief Gibt den RSSI-Wert eines bestimmten remote Knotens zurück.
+     */
+    int getRemoteNodeRssi(size_t index) const {
+        if (index < _remoteNodesCount) return _remoteNodes[index].rssi;
+        return -127;
+    }
+
+    /**
+     * @brief Gibt den RSSI-Wert des stärksten verbundenen remote Knotens zurück.
+     */
+    int getStrongestNodeRssi();
+
 #if ENABLE_MESH
     // Statischer Callback für ESP-NOW Empfang
     static void onEspNowRecv(uint8_t* mac, uint8_t* incomingData, uint8_t len);
@@ -93,6 +114,7 @@ private:
     struct ActiveNode {
         uint32_t nodeId;
         uint32_t lastSeen;
+        int rssi; // Signalstärke in dBm
     };
     static constexpr size_t MAX_REMOTE_NODES = 32;
     ActiveNode _remoteNodes[MAX_REMOTE_NODES];

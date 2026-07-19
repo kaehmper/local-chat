@@ -18,6 +18,15 @@ enum ScreenView {
     VIEW_SYSTEM = 2
 };
 
+#define NUM_STARS 25
+
+struct Star {
+    float x;
+    uint8_t y;
+    float speed;
+    uint8_t pattern;
+};
+
 class OledManager {
 public:
     OledManager();
@@ -38,6 +47,9 @@ public:
      * @param roomMsgCount Anzahl der verfügbaren Chat-Nachrichten.
      * @param getRoomMsg Funktion/Lambda zum Abrufen einer Chat-Nachricht per Index.
      * @param connectedNodesCount Anzahl der im Mesh erkannten aktiven Remote-Knoten.
+     * @param strongestRssi RSSI-Wert des stärksten remote Knotens.
+     * @param getNodeId Funktion/Lambda zum Abrufen einer Node ID per Index.
+     * @param getNodeRssi Funktion/Lambda zum Abrufen eines Node RSSI per Index.
      */
     void update(unsigned long now,
                 bool systemActive,
@@ -46,7 +58,10 @@ public:
                 const std::function<bool(size_t)>& isUserLocal,
                 size_t roomMsgCount,
                 const std::function<String(size_t)>& getRoomMsg,
-                size_t connectedNodesCount);
+                size_t connectedNodesCount,
+                int strongestRssi,
+                const std::function<String(size_t)>& getNodeId,
+                const std::function<int(size_t)>& getNodeRssi);
 
 private:
     SSD1306 _oled;
@@ -54,6 +69,11 @@ private:
     bool _screensaverActive;
     int _ssCol;
     int _ssPage;
+
+    // Starfield-Screensaver
+    Star _stars[NUM_STARS];
+    bool _starsInitialized;
+    unsigned long _lastStarUpdate;
 
     // Button-Entprellung und manueller Modus
     unsigned long _buttonPressStart;
@@ -65,5 +85,9 @@ private:
     void drawHeader(const char* title, const uint8_t* iconData);
     void drawMessagesScreen(size_t msgCount, const std::function<String(size_t)>& getMsg);
     void drawUsersScreen(size_t userCount, const std::function<String(size_t)>& getUserUid, const std::function<bool(size_t)>& isUserLocal);
-    void drawSystemScreen(unsigned long now, size_t connectedNodesCount);
+    void drawSystemScreen(unsigned long now,
+                         size_t connectedNodesCount,
+                         int strongestRssi,
+                         const std::function<String(size_t)>& getNodeId,
+                         const std::function<int(size_t)>& getNodeRssi);
 };

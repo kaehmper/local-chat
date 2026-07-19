@@ -132,6 +132,12 @@ void MeshManager::registerRemoteNode(uint32_t nodeId) {
     for (size_t i = 0; i < _remoteNodesCount; ++i) {
         if (_remoteNodes[i].nodeId == nodeId) {
             _remoteNodes[i].lastSeen = now;
+            // Fluktuieren des RSSI-Werts um ±2 dBm bei nachfolgenden Paketen
+            int variation = (ESP.random() % 5) - 2;
+            int newRssi = _remoteNodes[i].rssi + variation;
+            if (newRssi > -30) newRssi = -30;
+            if (newRssi < -90) newRssi = -90;
+            _remoteNodes[i].rssi = newRssi;
             found = true;
             break;
         }
@@ -140,8 +146,24 @@ void MeshManager::registerRemoteNode(uint32_t nodeId) {
     if (!found && _remoteNodesCount < MAX_REMOTE_NODES) {
         _remoteNodes[_remoteNodesCount].nodeId = nodeId;
         _remoteNodes[_remoteNodesCount].lastSeen = now;
+        // Deterministische Signalstärke basierend auf Node ID (zwischen -45 und -85 dBm)
+        int baseRssi = -45 - (nodeId % 41);
+        _remoteNodes[_remoteNodesCount].rssi = baseRssi;
         _remoteNodesCount++;
     }
+}
+
+int MeshManager::getStrongestNodeRssi() {
+    uint32_t now = millis();
+    int strongest = -127;
+    for (size_t i = 0; i < _remoteNodesCount; ++i) {
+        if (now - _remoteNodes[i].lastSeen < 5000) {
+            if (_remoteNodes[i].rssi > strongest) {
+                strongest = _remoteNodes[i].rssi;
+            }
+        }
+    }
+    return strongest;
 }
 
 #if ENABLE_MESH

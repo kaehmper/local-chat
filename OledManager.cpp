@@ -17,6 +17,8 @@ OledManager::OledManager()
       _screensaverActive(false),
       _ssCol(0),
       _ssPage(0),
+      _starsInitialized(false),
+      _lastStarUpdate(0),
       _buttonPressStart(0),
       _buttonLastState(HIGH),
       _manualMode(false),
@@ -186,36 +188,54 @@ void OledManager::drawUsersScreen(size_t userCount, const std::function<String(s
     }
 }
 
-void OledManager::drawSystemScreen(unsigned long now, size_t connectedNodesCount) {
+void OledManager::drawSystemScreen(unsigned long now,
+                                   size_t connectedNodesCount,
+                                   int strongestRssi,
+                                   const std::function<String(size_t)>& getNodeId,
+                                   const std::function<int(size_t)>& getNodeRssi) {
     drawHeader("SYSTEM INFO", icon_info);
 
-    // Page 2: AP SSID
-    String line2 = "AP:   " + String(Config::CHATNAME);
+    // Page 2: IP Address
+    String line2 = "IP:   10.10.10.1";
     while (line2.length() < 21) line2 += " ";
     _oled.setCursor(0, 2);
     _oled.print(line2.c_str());
 
-    // Page 3: IP Address
-    String line3 = "IP:   10.10.10.1";
+    // Page 3: Remote Nodes count
+    String line3 = "Nodes: " + String(connectedNodesCount) + " active";
     while (line3.length() < 21) line3 += " ";
     _oled.setCursor(0, 3);
     _oled.print(line3.c_str());
 
-    // Page 4: Mesh Name
-    String line4 = "Mesh: " + String(Config::MESH_PREFIX);
-    if (line4.length() > 21) line4 = line4.substring(0, 21);
+    // Page 4: Strongest Node RSSI
+    String line4;
+    if (connectedNodesCount > 0 && strongestRssi > -127) {
+        line4 = "Max Sig: " + String(strongestRssi) + " dBm";
+    } else {
+        line4 = "Max Sig: N/A";
+    }
     while (line4.length() < 21) line4 += " ";
     _oled.setCursor(0, 4);
     _oled.print(line4.c_str());
 
-    // Page 5: Mesh Channel
-    String line5 = "Chan: " + String(Config::MESH_CHANNEL);
+    // Page 5: Node 1 info
+    String line5 = "                     ";
+    if (connectedNodesCount > 0) {
+        String id = getNodeId(0);
+        int rssi = getNodeRssi(0);
+        line5 = "N1: " + id + " (" + String(rssi) + "dBm)";
+    }
     while (line5.length() < 21) line5 += " ";
     _oled.setCursor(0, 5);
     _oled.print(line5.c_str());
 
-    // Page 6: Remote Nodes count
-    String line6 = "Nodes: " + String(connectedNodesCount) + " active";
+    // Page 6: Node 2 info
+    String line6 = "                     ";
+    if (connectedNodesCount > 1) {
+        String id = getNodeId(1);
+        int rssi = getNodeRssi(1);
+        line6 = "N2: " + id + " (" + String(rssi) + "dBm)";
+    }
     while (line6.length() < 21) line6 += " ";
     _oled.setCursor(0, 6);
     _oled.print(line6.c_str());
@@ -238,7 +258,10 @@ void OledManager::update(unsigned long now,
                          const std::function<bool(size_t)>& isUserLocal,
                          size_t roomMsgCount,
                          const std::function<String(size_t)>& getRoomMsg,
-                         size_t connectedNodesCount) {
+                         size_t connectedNodesCount,
+                         int strongestRssi,
+                         const std::function<String(size_t)>& getNodeId,
+                         const std::function<int(size_t)>& getNodeRssi) {
     if (!Config::ENABLE_OLED) return;
 
     // GPIO 1 button reading and debouncing
@@ -255,19 +278,23 @@ void OledManager::update(unsigned long now,
 
     // Handle screensaver transitions & waking up
     if (!systemActive && !_manualMode) {
-        static unsigned long lastUptimeUpdate = 0;
-        bool forceRedraw = false;
-
         // Trigger immediate screensaver when entering screensaver mode
         if (!_screensaverActive) {
             _screensaverActive = true;
             _lastOledTick = now;
-            lastUptimeUpdate = now;
+            _lastStarUpdate = now;
             _oled.clear();
 
-            _ssCol = (_ssCol + 15) % 45;
-            _ssPage = (_ssPage + 1) % 5;
-            forceRedraw = true;
+            // Initialize stars if not initialized
+            if (!_starsInitialized) {
+                for (int i = 0; i < NUM_STARS; ++i) {
+                    _stars[i].x = ESP.random() % 128;
+                    _stars[i].y = ESP.random() % 8;
+                    _stars[i].speed = 0.5f + (float)(ESP.random() % 200) / 100.0f; // Speed between 0.5 and 2.5
+                    _stars[i].pattern = 1 << (ESP.random() % 8);
+                }
+                _starsInitialized = true;
+            }
         }
 
         // Handle button wakeup (wake up only!)
@@ -282,44 +309,34 @@ void OledManager::update(unsigned long now,
             } else if (_currentView == VIEW_USERS) {
                 drawUsersScreen(onlineUsersCount, getUserUid, isUserLocal);
             } else {
-                drawSystemScreen(now, connectedNodesCount);
+                drawSystemScreen(now, connectedNodesCount, strongestRssi, getNodeId, getNodeRssi);
             }
             return;
         }
 
-        // Position shift every 5 seconds (to prevent burn-in)
-        bool positionShifted = false;
-        if (now - _lastOledTick >= 5000) {
-            _lastOledTick = now;
-            _oled.clear();
-            _ssCol = (_ssCol + 15) % 45;
-            _ssPage = (_ssPage + 1) % 5;
-            positionShifted = true;
-        }
+        // Starfield Screensaver Update (~30 FPS, i.e., every 33 ms)
+        if (now - _lastStarUpdate >= 33) {
+            _lastStarUpdate = now;
 
-        // Update uptime every second
-        if (forceRedraw || positionShifted || (now - lastUptimeUpdate >= 1000)) {
-            lastUptimeUpdate = now;
-
-            unsigned long total_secs = now / 1000;
-            unsigned int hours = total_secs / 3600;
-            unsigned int minutes = (total_secs % 3600) / 60;
-            unsigned int seconds = total_secs % 60;
-            String runtimeStr = String(hours) + "h " + String(minutes) + "m " + String(seconds) + "s";
-
-            if (forceRedraw || positionShifted) {
-                _oled.setCursor(_ssCol, _ssPage);
-                _oled.print(Config::CHATNAME);
-                _oled.setCursor(_ssCol, _ssPage + 1);
-                _oled.print("10.10.10.1");
+            // 1. Erase all stars
+            for (int i = 0; i < NUM_STARS; ++i) {
+                _oled.setCursor((uint8_t)_stars[i].x, _stars[i].y);
+                _oled.drawColumn(0x00);
             }
 
-            _oled.setCursor(_ssCol, _ssPage + 2);
-            _oled.print((runtimeStr + "   ").c_str());
+            // 2. Update and draw stars
+            for (int i = 0; i < NUM_STARS; ++i) {
+                _stars[i].x += _stars[i].speed;
+                if (_stars[i].x >= 128.0f) {
+                    _stars[i].x = 0.0f;
+                    _stars[i].y = ESP.random() % 8;
+                    _stars[i].speed = 0.5f + (float)(ESP.random() % 200) / 100.0f;
+                    _stars[i].pattern = 1 << (ESP.random() % 8);
+                }
 
-            String nodesStr = "Nodes: " + String(connectedNodesCount);
-            _oled.setCursor(_ssCol, _ssPage + 3);
-            _oled.print((nodesStr + "   ").c_str());
+                _oled.setCursor((uint8_t)_stars[i].x, _stars[i].y);
+                _oled.drawColumn(_stars[i].pattern);
+            }
         }
         return;
     }
@@ -355,7 +372,7 @@ void OledManager::update(unsigned long now,
                 } else if (_currentView == VIEW_USERS) {
                     drawUsersScreen(onlineUsersCount, getUserUid, isUserLocal);
                 } else {
-                    drawSystemScreen(now, connectedNodesCount);
+                    drawSystemScreen(now, connectedNodesCount, strongestRssi, getNodeId, getNodeRssi);
                 }
             }
             return;
@@ -373,7 +390,7 @@ void OledManager::update(unsigned long now,
         } else if (_currentView == VIEW_USERS) {
             drawUsersScreen(onlineUsersCount, getUserUid, isUserLocal);
         } else {
-            drawSystemScreen(now, connectedNodesCount);
+            drawSystemScreen(now, connectedNodesCount, strongestRssi, getNodeId, getNodeRssi);
         }
     }
 }

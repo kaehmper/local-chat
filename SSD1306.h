@@ -63,6 +63,11 @@ public:
      */
     void drawPattern(const uint8_t* data);
 
+    /**
+     * @brief Zeichnet ein einzelnes Spalten-Byte (8 vertikale Pixel) an der aktuellen Position.
+     */
+    void drawColumn(uint8_t data);
+
 private:
     uint8_t _address;
     uint8_t _sda;

@@ -79,6 +79,10 @@ public:
      */
     size_t getConnectedNodesCount() { return _meshManager.getConnectedNodesCount(); }
 
+    uint32_t getRemoteNodeId(size_t index) { return _meshManager.getRemoteNodeId(index); }
+    int getRemoteNodeRssi(size_t index) { return _meshManager.getRemoteNodeRssi(index); }
+    int getStrongestNodeRssi() { return _meshManager.getStrongestNodeRssi(); }
+
 private:
     AsyncWebSocket _ws;
     MessageRingBuffer _openRoom;

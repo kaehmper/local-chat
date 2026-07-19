@@ -293,3 +293,7 @@ void SSD1306::printWrapped(const String& str, uint8_t startPage, uint8_t maxPage
 void SSD1306::drawPattern(const uint8_t* data) {
     sendData(data, 8);
 }
+
+void SSD1306::drawColumn(uint8_t data) {
+    sendData(&data, 1);
+}
