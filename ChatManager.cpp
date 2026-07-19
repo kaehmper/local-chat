@@ -66,6 +66,7 @@ void ChatManager::update() {
     // OLED-Zustandsmaschine aktualisieren
     bool systemActive = (now - _lastActivity) < Config::ACTIVITY_DURATION;
     updateOnlineUsersList();
+    int strongestRssi = getStrongestNodeRssi();
     _oledManager.update(
         now,
         systemActive,
@@ -74,7 +75,14 @@ void ChatManager::update() {
         [this](size_t idx) { return _onlineUsers[idx].isLocal; },
         _openRoom.size(),
         [this](size_t idx) { return String(_openRoom.get(idx)); },
-        getConnectedNodesCount()
+        getConnectedNodesCount(),
+        strongestRssi,
+        [this](size_t idx) {
+            char buf[9];
+            std::sprintf(buf, "%08X", _meshManager.getRemoteNodeId(idx));
+            return String(buf);
+        },
+        [this](size_t idx) { return _meshManager.getRemoteNodeRssi(idx); }
     );
 
     // Nicht-blockierendes LED-Blinken aktualisieren
