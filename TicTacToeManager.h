@@ -30,4 +30,14 @@ public:
      * @brief Validiert, ob eine UID das korrekte 4-stellige Hex-Format besitzt.
      */
     static bool isValidUid(const String& uid);
+
+    /**
+     * @brief Entschlüsselt/Unescaped JSON-Steuerzeichen in einem String.
+     */
+    static String unescapeJsonString(const String& val);
+
+    /**
+     * @brief Extrahiert den Wert eines bestimmten Schlüssels aus einem einfachen JSON-String.
+     */
+    static String getJsonValue(const String& json, const String& key);
 };

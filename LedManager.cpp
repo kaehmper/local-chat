@@ -8,20 +8,20 @@ void LedManager::begin() {
     digitalWrite(Config::ACTIVITY_LED, Config::ACTIVITY_REVERSE ? HIGH : LOW);
 }
 
-void LedManager::triggerMessagePulse() {
-    _pulseTransitionsLeft = Config::MSG_PULSE_COUNT * 2;
+void LedManager::triggerPulse(int count, uint32_t duration_ms) {
+    _pulseTransitionsLeft = count * 2;
     _pulseLedOn = true;
-    _currentTransitionDuration = Config::MSG_PULSE_DURATION_MS;
+    _currentTransitionDuration = duration_ms;
     _nextTransitionTime = millis();
     update(millis());
 }
 
+void LedManager::triggerMessagePulse() {
+    triggerPulse(Config::MSG_PULSE_COUNT, Config::MSG_PULSE_DURATION_MS);
+}
+
 void LedManager::triggerConnectPulse() {
-    _pulseTransitionsLeft = Config::CONNECT_PULSE_COUNT * 2;
-    _pulseLedOn = true;
-    _currentTransitionDuration = Config::CONNECT_PULSE_DURATION_MS;
-    _nextTransitionTime = millis();
-    update(millis());
+    triggerPulse(Config::CONNECT_PULSE_COUNT, Config::CONNECT_PULSE_DURATION_MS);
 }
 
 void LedManager::update(unsigned long now) {

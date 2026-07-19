@@ -54,11 +54,8 @@ void MeshManager::begin(MessageReceivedCallback onMsg,
 #endif
 }
 
-void MeshManager::update(const std::function<String(size_t)>& getMessageByIndex, size_t messageCount) {
+void MeshManager::pruneRemoteNodes() {
     uint32_t now = millis();
-
-#if ENABLE_MESH
-    // Periodische Bereinigung abgelaufener Remote-Knoten (> 5 Sekunden)
     size_t writeIdx = 0;
     for (size_t i = 0; i < _remoteNodesCount; ++i) {
         if (now - _remoteNodes[i].lastSeen < 5000) {
@@ -66,6 +63,14 @@ void MeshManager::update(const std::function<String(size_t)>& getMessageByIndex,
         }
     }
     _remoteNodesCount = writeIdx;
+}
+
+void MeshManager::update(const std::function<String(size_t)>& getMessageByIndex, size_t messageCount) {
+    uint32_t now = millis();
+
+#if ENABLE_MESH
+    // Periodische Bereinigung abgelaufener Remote-Knoten (> 5 Sekunden)
+    pruneRemoteNodes();
 
     // Alle 60 Sekunden periodischer Sync-Request
     if (now - _lastPingTime > 60000) {
@@ -122,13 +127,7 @@ void MeshManager::registerRemoteNode(uint32_t nodeId) {
     uint32_t now = millis();
 
     // 1. Abgelaufene Knoten bereinigen
-    size_t writeIdx = 0;
-    for (size_t i = 0; i < _remoteNodesCount; ++i) {
-        if (now - _remoteNodes[i].lastSeen < 5000) {
-            _remoteNodes[writeIdx++] = _remoteNodes[i];
-        }
-    }
-    _remoteNodesCount = writeIdx;
+    pruneRemoteNodes();
 
     // 2. Knoten suchen und aktualisieren oder neu anlegen
     bool found = false;

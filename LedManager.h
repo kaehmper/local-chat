@@ -45,4 +45,7 @@ private:
     unsigned long _nextTransitionTime; // Zeitpunkt des nächsten Wechsels in ms
     bool _pulseLedOn;                  // Ob die LED im Puls-Zustand an sein soll
     uint32_t _currentTransitionDuration; // Aktuelle Dauer pro Zustand in ms
+
+    // Private helper for triggering pulses
+    void triggerPulse(int count, uint32_t duration_ms);
 };

@@ -144,4 +144,5 @@ private:
     void handleIncomingPacket(const uint8_t* data, size_t len);
     void handleSyncRequest(uint32_t targetNodeId);
     void handleSyncResponse(const String& payload);
+    void pruneRemoteNodes();
 };

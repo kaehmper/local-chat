@@ -90,4 +90,16 @@ private:
     void drawUsersScreen(size_t userCount, const std::function<String(size_t)>& getUserUid, const std::function<bool(size_t)>& isUserLocal);
     void drawSystemScreen(unsigned long now);
     void drawNetworkScreen(size_t connectedNodesCount, int strongestRssi, double upKbps, double downKbps);
+
+    // Private helper for consolidating view drawings
+    void drawCurrentView(unsigned long now,
+                         size_t onlineUsersCount,
+                         const std::function<String(size_t)>& getUserUid,
+                         const std::function<bool(size_t)>& isUserLocal,
+                         size_t roomMsgCount,
+                         const std::function<String(size_t)>& getRoomMsg,
+                         size_t connectedNodesCount,
+                         int strongestRssi,
+                         double upKbps,
+                         double downKbps);
 };

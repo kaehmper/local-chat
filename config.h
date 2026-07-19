@@ -19,9 +19,6 @@ constexpr uint16_t DNS_PORT      = 53;                      ///< Port des DNS-Se
 constexpr float MAX_WIFI_POWER   = 20.5f;                   ///< Maximale WLAN-Sendeleistung in dBm (0 bis 20.5)
 
 // ---------- Mesh-Netzwerk ----------
-constexpr char MESH_PREFIX[]     = "PopupMeshPrivate";      ///< SSID für das interne Mesh-Backhaul
-constexpr char MESH_PASSWORD[]   = "meshsecure123";         ///< Passwort für die Mesh-Verschlüsselung
-constexpr uint16_t MESH_PORT     = 5555;                    ///< UDP-Port für painlessMesh
 constexpr uint8_t MESH_CHANNEL   = 6;                       ///< Wi-Fi Kanal (AP und Mesh MÜSSEN auf dem gleichen Kanal liegen!)
 
 // ---------- Chat-Einstellungen ----------

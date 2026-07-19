@@ -1,7 +1,6 @@
 #include "TicTacToeManager.h"
 
-// Statische Helfer zum Parsen von JSON-Werten im TicTacToeManager
-static String unescapeJsonString(const String& val) {
+String TicTacToeManager::unescapeJsonString(const String& val) {
     String result;
     result.reserve(val.length());
     for (size_t i = 0; i < val.length(); i++) {
@@ -25,7 +24,7 @@ static String unescapeJsonString(const String& val) {
     return result;
 }
 
-static String getJsonValue(const String& json, const String& key) {
+String TicTacToeManager::getJsonValue(const String& json, const String& key) {
     String searchKey = "\"" + key + "\":\"";
     int start = json.indexOf(searchKey);
     if (start != -1) {
