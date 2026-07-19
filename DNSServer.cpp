@@ -1,7 +1,7 @@
 #include "DNSServer.h"
 
 CustomDNSServer::CustomDNSServer()
-    : _resolvedIP(10, 10, 10, 1), _port(53), _running(false) {}
+    : _resolvedIP(10, 10, 10, 1), _port(53), _running(false), _bytesSent(0), _bytesReceived(0) {}
 
 bool CustomDNSServer::begin(uint16_t port, const IPAddress& resolvedIP) {
     _port = port;
@@ -22,6 +22,8 @@ void CustomDNSServer::process() {
 
     int packetLen = _udp.parsePacket();
     if (packetLen <= 0) return;
+
+    _bytesReceived += packetLen;
 
     // DNS-Pakete müssen mindestens den Header enthalten (12 Bytes) und dürfen das Limit nicht überschreiten
     if (packetLen < 12 || static_cast<size_t>(packetLen) > DNS_PACKET_MAX_SIZE) {
@@ -163,5 +165,6 @@ void CustomDNSServer::process() {
     if (_udp.beginPacket(_udp.remoteIP(), _udp.remotePort())) {
         _udp.write(response, offset);
         _udp.endPacket();
+        _bytesSent += offset;
     }
 }

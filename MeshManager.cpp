@@ -12,7 +12,9 @@ MeshManager::MeshManager()
       _syncInProgress(false),
       _syncNextIndex(0),
       _lastSyncMsgTime(0),
-      _remoteNodesCount(0) {
+      _remoteNodesCount(0),
+      _bytesSent(0),
+      _bytesReceived(0) {
     std::memset(_remoteNodes, 0, sizeof(_remoteNodes));
 }
 
@@ -99,6 +101,7 @@ void MeshManager::sendBroadcast(uint8_t packetType, const String& msg) {
 
     uint8_t broadcastMac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     esp_now_send(broadcastMac, reinterpret_cast<uint8_t*>(&packet), sizeof(MeshPacket));
+    _bytesSent += sizeof(MeshPacket);
 #endif
 }
 
@@ -174,6 +177,7 @@ void MeshManager::onEspNowRecv(uint8_t* mac, uint8_t* incomingData, uint8_t len)
 }
 
 void MeshManager::handleIncomingPacket(const uint8_t* data, size_t len) {
+    _bytesReceived += len;
     MeshPacket packet;
     std::memcpy(&packet, data, sizeof(MeshPacket));
 

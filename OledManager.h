@@ -15,7 +15,8 @@
 enum ScreenView {
     VIEW_MESSAGES = 0,
     VIEW_USERS = 1,
-    VIEW_SYSTEM = 2
+    VIEW_SYSTEM = 2,
+    VIEW_NETWORK = 3
 };
 
 #define NUM_STARS 25
@@ -61,7 +62,9 @@ public:
                 size_t connectedNodesCount,
                 int strongestRssi,
                 const std::function<String(size_t)>& getNodeId,
-                const std::function<int(size_t)>& getNodeRssi);
+                const std::function<int(size_t)>& getNodeRssi,
+                double upKbps,
+                double downKbps);
 
 private:
     SSD1306 _oled;
@@ -85,9 +88,6 @@ private:
     void drawHeader(const char* title, const uint8_t* iconData);
     void drawMessagesScreen(size_t msgCount, const std::function<String(size_t)>& getMsg);
     void drawUsersScreen(size_t userCount, const std::function<String(size_t)>& getUserUid, const std::function<bool(size_t)>& isUserLocal);
-    void drawSystemScreen(unsigned long now,
-                         size_t connectedNodesCount,
-                         int strongestRssi,
-                         const std::function<String(size_t)>& getNodeId,
-                         const std::function<int(size_t)>& getNodeRssi);
+    void drawSystemScreen(unsigned long now);
+    void drawNetworkScreen(size_t connectedNodesCount, int strongestRssi, double upKbps, double downKbps);
 };

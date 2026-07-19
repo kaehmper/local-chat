@@ -11,6 +11,9 @@ static const uint8_t icon_users[8] = { 0x00, 0x1C, 0x22, 0x7E, 0x7E, 0x22, 0x1C,
 // Info (i) icon
 static const uint8_t icon_info[8] = { 0x00, 0x3E, 0x41, 0x49, 0x49, 0x41, 0x3E, 0x00 };
 
+// Signal / Wifi Bars icon
+static const uint8_t icon_network[8] = { 0x03, 0x00, 0x0F, 0x00, 0x3F, 0x00, 0xFF, 0x00 };
+
 OledManager::OledManager()
     : _oled(Config::OLED_I2C_ADDR, Config::OLED_SDA, Config::OLED_SCL),
       _lastOledTick(0),
@@ -188,11 +191,7 @@ void OledManager::drawUsersScreen(size_t userCount, const std::function<String(s
     }
 }
 
-void OledManager::drawSystemScreen(unsigned long now,
-                                   size_t connectedNodesCount,
-                                   int strongestRssi,
-                                   const std::function<String(size_t)>& getNodeId,
-                                   const std::function<int(size_t)>& getNodeRssi) {
+void OledManager::drawSystemScreen(unsigned long now) {
     drawHeader("SYSTEM INFO", icon_info);
 
     // Page 2: IP Address
@@ -201,54 +200,75 @@ void OledManager::drawSystemScreen(unsigned long now,
     _oled.setCursor(0, 2);
     _oled.print(line2.c_str());
 
-    // Page 3: Remote Nodes count
-    String line3 = "Nodes: " + String(connectedNodesCount) + " active";
-    while (line3.length() < 21) line3 += " ";
-    _oled.setCursor(0, 3);
-    _oled.print(line3.c_str());
-
-    // Page 4: Strongest Node RSSI
-    String line4;
-    if (connectedNodesCount > 0 && strongestRssi > -127) {
-        line4 = "Max Sig: " + String(strongestRssi) + " dBm";
-    } else {
-        line4 = "Max Sig: N/A";
-    }
-    while (line4.length() < 21) line4 += " ";
-    _oled.setCursor(0, 4);
-    _oled.print(line4.c_str());
-
-    // Page 5: Node 1 info
-    String line5 = "                     ";
-    if (connectedNodesCount > 0) {
-        String id = getNodeId(0);
-        int rssi = getNodeRssi(0);
-        line5 = "N1: " + id + " (" + String(rssi) + "dBm)";
-    }
-    while (line5.length() < 21) line5 += " ";
-    _oled.setCursor(0, 5);
-    _oled.print(line5.c_str());
-
-    // Page 6: Node 2 info
-    String line6 = "                     ";
-    if (connectedNodesCount > 1) {
-        String id = getNodeId(1);
-        int rssi = getNodeRssi(1);
-        line6 = "N2: " + id + " (" + String(rssi) + "dBm)";
-    }
-    while (line6.length() < 21) line6 += " ";
-    _oled.setCursor(0, 6);
-    _oled.print(line6.c_str());
-
-    // Page 7: Uptime
+    // Page 3: Uptime
     unsigned long total_secs = now / 1000;
     unsigned int hours = total_secs / 3600;
     unsigned int minutes = (total_secs % 3600) / 60;
     unsigned int seconds = total_secs % 60;
     String runtimeStr = "UP:   " + String(hours) + "h " + String(minutes) + "m " + String(seconds) + "s";
     while (runtimeStr.length() < 21) runtimeStr += " ";
-    _oled.setCursor(0, 7);
+    _oled.setCursor(0, 3);
     _oled.print(runtimeStr.c_str());
+
+    // Clear remaining lines (Pages 4 to 7)
+    for (uint8_t p = 4; p < 8; ++p) {
+        _oled.setCursor(0, p);
+        _oled.print("                     ");
+    }
+}
+
+static String formatSpeed(double kbps) {
+    if (kbps < 0.05) return "0";
+    if (kbps < 9.95) {
+        char buf[10];
+        std::sprintf(buf, "%.1f", kbps);
+        return String(buf);
+    }
+    return String((int)(kbps + 0.5));
+}
+
+void OledManager::drawNetworkScreen(size_t connectedNodesCount, int strongestRssi, double upKbps, double downKbps) {
+    drawHeader("NETWORK", icon_network);
+
+    // Page 2: IP Address
+    String line2 = "IP:   10.10.10.1";
+    while (line2.length() < 21) line2 += " ";
+    _oled.setCursor(0, 2);
+    _oled.print(line2.c_str());
+
+    // Page 3: Nodes
+    String line3 = "Nodes: " + String(connectedNodesCount) + " active";
+    while (line3.length() < 21) line3 += " ";
+    _oled.setCursor(0, 3);
+    _oled.print(line3.c_str());
+
+    // Page 4: Signal
+    String line4;
+    if (connectedNodesCount > 0 && strongestRssi > -127) {
+        line4 = "Signal: " + String(strongestRssi) + " dbm";
+    } else {
+        line4 = "Signal: N/A";
+    }
+    while (line4.length() < 21) line4 += " ";
+    _oled.setCursor(0, 4);
+    _oled.print(line4.c_str());
+
+    // Page 5: UP/DOWN
+    String upStr = formatSpeed(upKbps);
+    String downStr = formatSpeed(downKbps);
+    String line5 = "UP/DOWN: " + upStr + " / " + downStr + " kb/s";
+    if (line5.length() > 21) {
+        line5 = "UP/DOWN: " + upStr + "/" + downStr + " kb/s";
+    }
+    while (line5.length() < 21) line5 += " ";
+    _oled.setCursor(0, 5);
+    _oled.print(line5.c_str());
+
+    // Clear remaining lines (Pages 6 and 7)
+    for (uint8_t p = 6; p < 8; ++p) {
+        _oled.setCursor(0, p);
+        _oled.print("                     ");
+    }
 }
 
 void OledManager::update(unsigned long now,
@@ -261,7 +281,9 @@ void OledManager::update(unsigned long now,
                          size_t connectedNodesCount,
                          int strongestRssi,
                          const std::function<String(size_t)>& getNodeId,
-                         const std::function<int(size_t)>& getNodeRssi) {
+                         const std::function<int(size_t)>& getNodeRssi,
+                         double upKbps,
+                         double downKbps) {
     if (!Config::ENABLE_OLED) return;
 
     // GPIO 1 button reading and debouncing
@@ -308,8 +330,10 @@ void OledManager::update(unsigned long now,
                 drawMessagesScreen(roomMsgCount, getRoomMsg);
             } else if (_currentView == VIEW_USERS) {
                 drawUsersScreen(onlineUsersCount, getUserUid, isUserLocal);
-            } else {
-                drawSystemScreen(now, connectedNodesCount, strongestRssi, getNodeId, getNodeRssi);
+            } else if (_currentView == VIEW_SYSTEM) {
+                drawSystemScreen(now);
+            } else if (_currentView == VIEW_NETWORK) {
+                drawNetworkScreen(connectedNodesCount, strongestRssi, upKbps, downKbps);
             }
             return;
         }
@@ -352,7 +376,7 @@ void OledManager::update(unsigned long now,
     bool forceRedraw = false;
     if (buttonPressed) {
         _manualMode = true;
-        _currentView = static_cast<ScreenView>((_currentView + 1) % 3);
+        _currentView = static_cast<ScreenView>((_currentView + 1) % 4);
         forceRedraw = true;
         _oled.clear();
     }
@@ -371,26 +395,30 @@ void OledManager::update(unsigned long now,
                     drawMessagesScreen(roomMsgCount, getRoomMsg);
                 } else if (_currentView == VIEW_USERS) {
                     drawUsersScreen(onlineUsersCount, getUserUid, isUserLocal);
-                } else {
-                    drawSystemScreen(now, connectedNodesCount, strongestRssi, getNodeId, getNodeRssi);
+                } else if (_currentView == VIEW_SYSTEM) {
+                    drawSystemScreen(now);
+                } else if (_currentView == VIEW_NETWORK) {
+                    drawNetworkScreen(connectedNodesCount, strongestRssi, upKbps, downKbps);
                 }
             }
             return;
         }
     }
 
-    // Auto-rotation every 5 seconds (rotating between Messages, Users, and System info)
+    // Auto-rotation every 5 seconds (rotating between Messages, Users, System, and Network info)
     if (now - _lastOledTick >= 5000 || _lastOledTick == 0) {
         _lastOledTick = now;
         _oled.clear();
-        _currentView = static_cast<ScreenView>((_currentView + 1) % 3);
+        _currentView = static_cast<ScreenView>((_currentView + 1) % 4);
 
         if (_currentView == VIEW_MESSAGES) {
             drawMessagesScreen(roomMsgCount, getRoomMsg);
         } else if (_currentView == VIEW_USERS) {
             drawUsersScreen(onlineUsersCount, getUserUid, isUserLocal);
-        } else {
-            drawSystemScreen(now, connectedNodesCount, strongestRssi, getNodeId, getNodeRssi);
+        } else if (_currentView == VIEW_SYSTEM) {
+            drawSystemScreen(now);
+        } else if (_currentView == VIEW_NETWORK) {
+            drawNetworkScreen(connectedNodesCount, strongestRssi, upKbps, downKbps);
         }
     }
 }

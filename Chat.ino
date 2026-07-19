@@ -25,6 +25,8 @@ IPAddress subnet(255, 255, 255, 0);
 // ---------- Webserver Handler ----------
 void handleRedirect(AsyncWebServerRequest *request) {
     chatManager.registerActivity();
+    chatManager.countBytesReceived(300);
+    chatManager.countBytesSent(300);
     Serial.println("[CaptivePortal] Umleitung auf http://10.10.10.1/");
 
     // Sende 302-Redirect mit Location-Header und HTML-Fallback-Body inklusive Meta-Refresh
@@ -48,6 +50,9 @@ void handleServeIndex(AsyncWebServerRequest *request) {
         handleRedirect(request);
         return;
     }
+
+    chatManager.countBytesReceived(300);
+    chatManager.countBytesSent(WebAssets::INDEX_GZ_LEN);
 
     // Senden des vor-komprimierten SPA-Frontends aus dem PROGMEM
     AsyncWebServerResponse *response = request->beginResponse_P(
